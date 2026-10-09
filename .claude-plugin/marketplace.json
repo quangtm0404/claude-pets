@@ -1,0 +1,16 @@
+{
+  "name": "pixel-pets",
+  "owner": { "name": "quangtm0404" },
+  "metadata": {
+    "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "pixel-pets",
+      "source": "./plugins/pixel-pets",
+      "description": "A pixel pet game and retro dashboard for Claude Code: plan usage, backlog story, branch, pet voices and guardrails",
+      "version": "1.0.0",
+      "category": "productivity"
+    }
+  ]
+}

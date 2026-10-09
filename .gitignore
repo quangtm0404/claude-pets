@@ -1,0 +1,5 @@
+# written by Claude Code each time it loads the mod
+plugins/pixel-pets/.claude-plugin/types/
+plugins/pixel-pets/tsconfig.json
+__pycache__/
+.DS_Store

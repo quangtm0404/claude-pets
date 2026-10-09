@@ -1,0 +1,42 @@
+{
+  "name": "pixel-pets",
+  "version": "1.0.0",
+  "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code, with plan usage, your backlog story and branch, pet voices and guardrails",
+  "author": { "name": "quangtm0404" },
+  "license": "MIT",
+  "keywords": ["retro", "statusline", "pet", "dashboard", "usage", "backlog", "guardrails"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "backlogFiles": {
+      "type": "string",
+      "title": "Backlog files",
+      "description": "Comma-separated markdown files a story id is looked up in (first hit wins), relative to the session's directory or absolute",
+      "default": "docs/backlog/BACKLOG.md, BACKLOG.md, docs/milestones.md"
+    },
+    "storyIdPattern": {
+      "type": "string",
+      "title": "Story id pattern",
+      "description": "A regular expression with one capture group matching a backlog id (default matches E12-S03 and M1-14)",
+      "default": "\\b([A-Z]\\d{1,3}-[A-Z]?\\d{1,3})\\b"
+    },
+    "defectCommand": {
+      "type": "string",
+      "title": "Defect command",
+      "description": "What /defect starts its draft with: a slash command such as /report-defect, or leave empty for a plain request",
+      "default": ""
+    },
+    "petKind": {
+      "type": "string",
+      "title": "Starting pet",
+      "description": "The pet you start with; /pet <animal> switches later",
+      "default": "cat",
+      "options": ["cat", "dog", "crab", "shark", "turtle", "mouse", "fox", "orca", "whale", "dolphin", "giraffe", "tiger", "squirrel", "penguin"]
+    },
+    "petName": {
+      "type": "string",
+      "title": "Starting pet name",
+      "description": "Up to 16 characters; /pet name renames it later",
+      "default": "Pixel"
+    }
+  }
+}
