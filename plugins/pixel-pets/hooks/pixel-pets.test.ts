@@ -49,6 +49,7 @@ const TABLE_MD = `## Milestone 1 — MVP
 
 function engine(on: On, md: string, now = Date.parse('2026-10-05T09:00:00Z')) {
   on('clock.now', () => ({ value: now }))
+  on('session.root', () => ({ value: '/repo' }))
   on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
   on('fs.exists', () => ({ value: true }))
   on('fs.stat', () => ({ value: { kind: 'file' as const, size: md.length, mtimeMs: 1, isLink: false } }))
@@ -93,7 +94,7 @@ test('/story reads a table row from a milestones file', async ($, on) => {
 test('/story with an unknown id says so', async ($, on) => {
   engine(on, STORY_MD)
   const ran = await $.command.run(run('story', 'E99-S01'))
-  expect(ran.text).toContain('E99-S01 is not in')
+  expect(ran.text).toContain("E99-S01 isn't in the plan")
 })
 
 test('/retro theme switches the palette', async ($, on) => {
@@ -442,6 +443,7 @@ test('several subagents hatch numbered helpers', async ($, on) => {
 test('XP saves add up: another session writing in between is never overwritten', async ($, on) => {
   const store: Record<string, unknown> = { petXp: 100 }
   on('clock.now', () => ({ value: Date.parse('2026-10-09T09:00:00Z') }))
+  on('session.root', () => ({ value: '/repo' }))
   on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
   on('fs.exists', () => ({ value: false }))
   on('ui.status', () => ({ value: undefined }))
@@ -457,4 +459,84 @@ test('XP saves add up: another session writing in between is never overwritten',
   store.petXp = 150 // another open session saved 48 more meanwhile
   await turn('t-2') // this session: +2 more, on top of the other's
   expect(store.petXp).toBe(152)
+})
+
+// ── The plan: per-repo, never an error ──────────────────────────────────────
+/** A repo at /repo whose files are exactly `files` (path → markdown); a real store. */
+function repo(on: On, files: Record<string, string>, dirs: Record<string, { name: string; kind: string }[]> = {}) {
+  const store: Record<string, unknown> = {}
+  // the engine hands hooks absolute, OS-shaped paths (C:\repo\x.md, or cwd-relative made absolute)
+  const norm = (p: string) => p.split('\\').join('/').replace(/^[a-z]:/i, '')
+  const findIn = <T,>(table: Record<string, T>, path: string): T | undefined => {
+    const n = norm(path)
+    const key = Object.keys(table).find(k => n === norm(k) || n.endsWith('/' + norm(k)))
+    return key === undefined ? undefined : table[key]
+  }
+  const find = (path: string) => findIn(files, path)
+  on('clock.now', () => ({ value: Date.parse('2026-10-09T09:00:00Z') }))
+  on('session.root', () => ({ value: '/repo' }))
+  on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
+  on('fs.exists', (_$, e) => ({ value: find((e as { path: string }).path) !== undefined }) as never)
+  on('fs.stat', (_$, e) => ({ value: { kind: 'file' as const, size: (find((e as { path: string }).path) ?? '').length, mtimeMs: 1, isLink: false } }) as never)
+  on('fs.read', (_$, e) => ({ value: find((e as { path: string }).path) ?? '' }) as never)
+  on('fs.list', (_$, e) => ({ value: (findIn(dirs, (e as { path: string }).path) ?? []).map(d => ({ ...d, size: 0, mtimeMs: 0, isLink: false })) }) as never)
+  on('store.get', (_$, e) => ({ value: store[(e as { key: string }).key] }) as never)
+  on('store.set', (_$, e) => ((store[(e as { key: string }).key] = (e as { value: unknown }).value), { value: undefined }) as never)
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }) as never)
+  return store
+}
+
+test('no plan is not an error: the band says how to set one', async ($, on) => {
+  repo(on, {})
+  const ran = await $.command.run(run('story', 'E12-S03'))
+  expect(ran.text).toContain('No plan found for this project')
+  expect(ran.text).toContain('/plan')
+  const ui = await $.ui.mount(tallBand('terminal') as never)
+  expect(await ui.find({ text: /NO PLAN YET · \/plan TO POINT AT YOURS/ })).toBeDefined()
+  expect(await ui.find({ text: /ERROR/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('an id mentioned in a prompt is only tracked when the plan has it', async ($, on) => {
+  repo(on, { 'docs/backlog/BACKLOG.md': STORY_MD })
+  on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
+  await $.prompt.submit({ text: 'the L6-V2 model is fine' } as never)
+  const none = await $.command.run(run('story', ''))
+  expect(none.text).toContain('No story tracked. Plan: docs/backlog/BACKLOG.md (from settings)')
+  await $.prompt.submit({ text: 'work on E12-S03 please' } as never)
+  const ui = await $.ui.mount(tallBand('terminal') as never)
+  expect(await ui.find({ text: 'E12-S03' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('/plan <path> points this repo at its own plan', async ($, on) => {
+  const store = repo(on, { '/repo/plans/roadmap.md': STORY_MD })
+  const before = await $.command.run(run('story', 'E12-S03'))
+  expect(before.text).toContain('No plan found')
+  const set = await $.command.run(run('plan', 'plans/roadmap.md'))
+  expect(set.text).toBe('Plan for this repo: /repo/plans/roadmap.md (1 story id in it). /story <id> tracks one.')
+  expect(store.plans).toEqual({ '/repo': ['/repo/plans/roadmap.md'] })
+  const after = await $.command.run(run('story', 'E12-S03'))
+  expect(after.text).toContain('Tracking E12-S03 [DARK]')
+  const cleared = await $.command.run(run('plan', 'clear'))
+  expect(cleared.text).toContain("This repo's plan is back to the settings")
+})
+
+test('/plan with no plan finds plan-like markdown in the repo and asks which', async ($, on) => {
+  repo(on, { '/repo/docs/ROADMAP.md': STORY_MD, '/repo/docs/notes.md': 'nothing' }, {
+    '/repo': [{ name: 'docs', kind: 'dir' }, { name: 'node_modules', kind: 'dir' }, { name: 'README.md', kind: 'file' }],
+    '/repo/docs': [{ name: 'ROADMAP.md', kind: 'file' }, { name: 'notes.md', kind: 'file' }],
+  })
+  const asked: string[][] = []
+  on('tool.call', (_$, e) => {
+    if (String(e.tool) !== 'AskUserQuestion') return { result: {}, text: 'ran' } as never
+    const q = (e as unknown as { questions: { question: string; options: { label: string }[] }[] }).questions[0]
+    asked.push(q?.options.map(o => o.label) ?? [])
+    return { result: { questions: (e as unknown as { questions: unknown[] }).questions, answers: { [q?.question ?? '']: 'docs/ROADMAP.md' } } } as never
+  })
+  const ran = await $.command.run(run('plan', ''))
+  expect(asked[0]).toEqual(['docs/ROADMAP.md', 'None of these'])
+  expect(ran.text).toBe('Plan for this repo: /repo/docs/ROADMAP.md (1 story id in it). /story <id> tracks one.')
 })

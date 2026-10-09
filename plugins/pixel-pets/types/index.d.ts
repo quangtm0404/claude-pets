@@ -74,7 +74,10 @@ declare module 'claude-code' {
       theme: ThemeName
       storyId: string | null
       story: Story | null
+      /** The tracked id the plan doesn't have (shown as a hint, not an error). */
       storyError: string | null
+      /** The plan file's name, or null when this project has none. */
+      planLabel: string | null
       usage: Usage
       pet: Pet
       petLine: string

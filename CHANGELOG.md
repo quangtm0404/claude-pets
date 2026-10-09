@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-10-09
+
+- **`/plan`**: each repo can point at its own plan file. `/plan` with no plan set finds plan-like markdown in the repo and asks which to use; `/plan <file>` sets it; `/plan clear` falls back to the settings.
+- **No more errors** for a missing plan: the band shows `NO PLAN YET · /plan TO POINT AT YOURS`, or which file the plan is, instead of `?FILE NOT FOUND ERROR`.
+- **No more false matches**: an id mentioned in a prompt, or in a branch name, is only tracked if the plan has it.
+- **Per-repo story**: each repo remembers the story it was tracking.
+- A plan that can't be read no longer costs a turn its XP.
+
 ## 1.0.0 — 2026-10-09
 
 First public release of Claude Pets (plugin id `pixel-pets`).

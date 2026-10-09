@@ -101,6 +101,7 @@ const isThemeName = (x: unknown): x is ThemeName => typeof x === 'string' && Obj
 const storyId = atom({ plugin: 'pixel-pets', key: 'storyId' } as const, null)
 const story = atom({ plugin: 'pixel-pets', key: 'story' } as const, null)
 const storyError = atom({ plugin: 'pixel-pets', key: 'storyError' } as const, null)
+const planLabel = atom({ plugin: 'pixel-pets', key: 'planLabel' } as const, null)
 const usage = atom({ plugin: 'pixel-pets', key: 'usage' } as const, { fiveHour: null, week: null, ctxPercent: null, costUsd: null })
 const petState = atom({ plugin: 'pixel-pets', key: 'pet' } as const, { kind: 'cat', name: '' })
 const petLine = atom({ plugin: 'pixel-pets', key: 'petLine' } as const, '')
@@ -248,12 +249,129 @@ async function firstExisting($: EngineInterface, paths: string[]): Promise<strin
   return null
 }
 
+// ── The plan: the markdown a project's stories live in ──────────────────────
+// Each repo can point at its own (/plan), stored by repo root; otherwise the
+// settings' backlogFiles apply. A story id is only ever tracked if the plan has it.
+const normPath = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '')
+const isAbsPath = (p: string) => /^([a-z]:)?\//i.test(normPath(p))
+const baseName = (p: string) => normPath(p).split('/').pop() ?? p
+
+async function repoRoot($: EngineInterface): Promise<string> {
+  return normPath(await $.session.root())
+}
+
+async function storeMap($: EngineInterface, key: string): Promise<Record<string, unknown>> {
+  const v = await $.store.get(key)
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+}
+
+/** The files this repo's plan is read from, and whether the repo chose them itself. */
+async function planFiles($: EngineInterface): Promise<{ files: string[]; isRepo: boolean; root: string }> {
+  const root = await repoRoot($)
+  const mine = (await storeMap($, 'plans'))[root]
+  if (Array.isArray(mine) && mine.length && mine.every(f => typeof f === 'string')) {
+    return { files: mine as string[], isRepo: true, root }
+  }
+  return { files: CFG.backlogFiles, isRepo: false, root }
+}
+
+async function setRepoPlan($: EngineInterface, root: string, files: string[] | null) {
+  const plans = await storeMap($, 'plans')
+  if (files) plans[root] = files
+  else delete plans[root]
+  await $.store.set('plans', plans)
+}
+
+async function existingFiles($: EngineInterface, files: string[]): Promise<string[]> {
+  const out: string[] = []
+  for (const f of files) if (await firstExisting($, [f])) out.push(f)
+  return out
+}
+
+/** Finds a story in the plan, reading nothing else; `existing` is the plan files that exist. */
+async function lookupStory($: EngineInterface, id: string): Promise<{ story: Story | null; existing: string[]; files: string[] }> {
+  const { files } = await planFiles($)
+  const existing: string[] = []
+  for (const path of files) {
+    if (!(await firstExisting($, [path]))) continue
+    existing.push(path)
+    const { mtimeMs } = await $.fs.stat(path)
+    const md = String(await $.fs.read(path))
+    const parsed = parseStoryBlock(md, id) ?? parseTableRow(md, id)
+    if (parsed) return { story: { ...parsed, source: baseName(path), path, mtimeMs }, existing, files }
+  }
+  return { story: null, existing, files }
+}
+
+async function setPlanLabel($: EngineInterface, existing: string[]) {
+  const label = existing[0] ? baseName(existing[0]) : null
+  if ((await read($, planLabel)) !== label) await update($, planLabel, () => label)
+}
+
+const PLAN_NAME = /(^|[-_ .])(backlog|roadmap|plan|planning|milestones?|todo|stories|tasks|sprint)([-_ .]|$)/i
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'bin', 'obj', 'out', '.venv', 'venv', '__pycache__', '.next', 'coverage', 'target'])
+
+/** Markdown in the repo that looks like a plan, the ones with the most story ids first. */
+async function discoverPlans($: EngineInterface, root: string): Promise<{ path: string; ids: number }[]> {
+  const hits: string[] = []
+  let queue: string[] = [root]
+  for (let depth = 0, visited = 0; depth <= 3 && queue.length && visited < 300; depth++) {
+    const next: string[] = []
+    for (const dir of queue) {
+      if (++visited > 300) break
+      let entries: { name: string; kind: string }[] = []
+      try {
+        entries = await $.fs.list(dir)
+      } catch {
+        continue
+      }
+      for (const en of entries) {
+        if (en.kind === 'dir' && !SKIP_DIRS.has(en.name) && !en.name.startsWith('.')) next.push(`${dir}/${en.name}`)
+        else if (en.kind === 'file' && /\.md$/i.test(en.name) && PLAN_NAME.test(en.name.replace(/\.md$/i, ''))) hits.push(`${dir}/${en.name}`)
+      }
+    }
+    queue = next
+  }
+  const ids = new RegExp(CFG.storyId.source, 'gi')
+  const scored: { path: string; ids: number }[] = []
+  for (const path of hits.slice(0, 16)) {
+    try {
+      const md = String(await $.fs.read(path))
+      scored.push({ path, ids: new Set(md.match(ids) ?? []).size })
+    } catch {
+      // unreadable: skipped
+    }
+  }
+  return scored.sort((x, y) => y.ids - x.ids || x.path.length - y.path.length)
+}
+
+/** Asks which file is the plan: up to four found ones, or a path typed under Other. */
+async function askPlan($: EngineInterface, root: string, found: { path: string; ids: number }[]): Promise<string | undefined> {
+  const rel = (p: string) => (p.startsWith(root + '/') ? p.slice(root.length + 1) : p)
+  const shown = found.slice(0, 4)
+  const labels = shown.map(f => rel(f.path))
+  try {
+    const answer = await $.ui.ask('Which file is this project\'s plan?', {
+      header: 'Plan',
+      options: labels.length >= 2 ? labels : [...labels, 'None of these'],
+    })
+    if (answer === 'None of these') return undefined
+    const i = labels.indexOf(answer)
+    if (i >= 0) return shown[i]?.path
+    const typed = answer.trim()
+    return typed ? (isAbsPath(typed) ? normPath(typed) : `${root}/${normPath(typed).replace(/^\.\//, '')}`) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Re-reads the selected story's markdown; `force` skips the unchanged-mtime check. */
 async function loadStory($: EngineInterface, force = false) {
   const id = await read($, storyId)
   if (!id) {
     await update($, story, () => null)
     await update($, storyError, () => null)
+    await setPlanLabel($, await existingFiles($, (await planFiles($)).files))
     return
   }
   const current = await read($, story)
@@ -264,35 +382,43 @@ async function loadStory($: EngineInterface, force = false) {
       // moved or deleted: look again
     }
   }
-  let found: Story | null = null
-  let looked = 0
-  for (const path of CFG.backlogFiles) {
-    if (!(await firstExisting($, [path]))) continue
-    looked++
-    const { mtimeMs } = await $.fs.stat(path)
-    const md = String(await $.fs.read(path))
-    const parsed = parseStoryBlock(md, id) ?? parseTableRow(md, id)
-    if (parsed) {
-      found = { ...parsed, source: path.split(/[\\/]/).pop() ?? path, path, mtimeMs }
-      break
-    }
-  }
-  if (!found) {
-    const files = CFG.backlogFiles.join(', ')
-    await update($, storyError, () => (looked ? `${id} is not in ${files}` : `no backlog file found (${files})`))
+  const hit = await lookupStory($, id)
+  await setPlanLabel($, hit.existing)
+  if (!hit.story) {
+    // not an error: the band says the id isn't in the plan and how to change it
+    await update($, storyError, () => id)
     await update($, story, () => null)
     return
   }
-  const next: Story = found
+  const next: Story = hit.story
   const changed = current?.id === id && current.status !== next.status
   await update($, story, () => next)
   await update($, storyError, () => null)
   if (changed) $.ui.toast(`▶ ${id}: ${current?.status} → ${next.status}`, { timeoutMs: 6000 })
 }
 
+/** Tracks a story for this repo (each repo remembers its own). */
+/** What /story says when nothing is tracked: where the plan is, or how to set one. */
+async function planHint($: EngineInterface): Promise<string> {
+  const missing = await read($, storyError)
+  const { files, isRepo } = await planFiles($)
+  const existing = await existingFiles($, files)
+  if (!existing.length) {
+    return `No plan found for this project (looked for ${files.join(', ')}). Run /plan to pick one, or /plan path/to/plan.md.`
+  }
+  const where = existing.join(', ') + (isRepo ? '' : ' (from settings)')
+  return missing
+    ? `${missing} isn't in the plan (${where}). /story <id> tracks another, /plan points at a different file.`
+    : `No story tracked. Plan: ${where}. /story <id> tracks one.`
+}
+
 async function selectStory($: EngineInterface, id: string | null) {
   await update($, storyId, () => id)
-  await $.store.set('storyId', id)
+  const root = await repoRoot($)
+  const stories = await storeMap($, 'stories')
+  if (id) stories[root] = id
+  else delete stories[root]
+  await $.store.set('stories', stories)
   await loadStory($, true)
   await refreshStatus($)
   await refreshGit($)
@@ -1296,6 +1422,7 @@ function usageRow(Box: unknown, Text: unknown, C: Palette, u: Usage, now: number
 const COMMANDS: { name: string; description: string }[] = [
   { name: 'qa-pane', description: 'Open the retro QA MONITOR pane' },
   { name: 'story', description: 'Track a backlog story from markdown: /story E12-S03 · /story M1-14 · /story clear' },
+  { name: 'plan', description: 'Which markdown is this project\'s plan: /plan (show) · /plan pick · /plan path/to/plan.md · /plan clear' },
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
@@ -1362,11 +1489,12 @@ export const register: Register = (on, options) => {
       await update($, theme, () => savedTheme)
     }
     if ((await read($, storyId)) === null) {
-      const saved = await $.store.get('storyId')
+      const saved = (await storeMap($, 'stories'))[await repoRoot($)]
       let id = typeof saved === 'string' ? saved : null
       try {
         const branch = await $.process.run(['git', 'branch', '--show-current'])
-        id = findStoryId(branch.stdout) ?? id
+        const fromBranch = findStoryId(branch.stdout)
+        if (fromBranch && (await lookupStory($, fromBranch)).story) id = fromBranch
       } catch {
         // not a git checkout
       }
@@ -1471,7 +1599,7 @@ export const register: Register = (on, options) => {
     if (args === '' || /^refresh$/i.test(args)) {
       await loadStory($, true)
       const s = await read($, story)
-      if (!s) return { text: (await read($, storyError)) ?? 'No story. Usage: /story E12-S03 · /story M1-14 · /story clear' }
+      if (!s) return { text: await planHint($) }
       const lines = [
         `${s.id} [${s.status}] ${s.title}`,
         `${s.epic}${s.points ? ` · ${s.points} pts` : ''} · ${s.section}`,
@@ -1486,7 +1614,43 @@ export const register: Register = (on, options) => {
     if (!id) return { text: 'Usage: /story E12-S03 · /story M1-14 · /story clear' }
     await selectStory($, id)
     const s = await read($, story)
-    return { text: s ? `Tracking ${s.id} [${s.status}] ${s.title}` : (await read($, storyError)) ?? `${id} not found.` }
+    return { text: s ? `Tracking ${s.id} [${s.status}] ${s.title}` : await planHint($) }
+  })
+
+  on('command.run', { command: 'plan' }, async ($, e) => {
+    const args = e.args.trim()
+    const { files, isRepo, root } = await planFiles($)
+    const use = async (path: string) => {
+      await setRepoPlan($, root, [path])
+      await loadStory($, true)
+      await refreshStatus($)
+      const ids = new Set(String(await $.fs.read(path)).match(new RegExp(CFG.storyId.source, 'gi')) ?? []).size
+      return { text: `Plan for this repo: ${path} (${ids} story id${ids === 1 ? '' : 's'} in it). /story <id> tracks one.` }
+    }
+    if (/^(clear|reset|default)$/i.test(args)) {
+      await setRepoPlan($, root, null)
+      await loadStory($, true)
+      return { text: `This repo's plan is back to the settings: ${CFG.backlogFiles.join(', ')}.` }
+    }
+    if (args && !/^pick$/i.test(args)) {
+      const path = isAbsPath(args) ? normPath(args) : `${root}/${normPath(args).replace(/^\.\//, '')}`
+      if (!(await firstExisting($, [path]))) return { text: `${path} doesn't exist. /plan pick lists the plan-like files in this repo.` }
+      return use(path)
+    }
+    if (!args) {
+      const existing = await existingFiles($, files)
+      if (existing.length) {
+        return {
+          text: [`Plan for ${root}${isRepo ? '' : ' (from settings)'}:`, ...existing.map(f => `  ${f}`), '/plan pick chooses another · /plan <file> · /plan clear'].join('\n'),
+        }
+      }
+    }
+    const found = await discoverPlans($, root)
+    if (!found.length) return { text: `No plan-like markdown (backlog, roadmap, plan, milestones…) found in ${root}. Point at yours: /plan path/to/plan.md` }
+    const picked = await askPlan($, root, found)
+    if (!picked) return { text: 'Plan unchanged.' }
+    if (!(await firstExisting($, [picked]))) return { text: `${picked} doesn't exist.` }
+    return use(picked)
   })
 
   on('command.run', { command: 'ticket' }, async ($, e) => {
@@ -1514,7 +1678,7 @@ export const register: Register = (on, options) => {
     const id = findStoryId(e.text)
     if (t) await update($, ticket, () => t)
     if (en) await update($, env, () => en)
-    if (id && id !== (await read($, storyId))) await selectStory($, id)
+    if (id && id !== (await read($, storyId)) && (await lookupStory($, id)).story) await selectStory($, id)
     else if (t || en) void refreshStatus($)
     const note = await storyNote($, e.text)
     return note ? next({ ...e, context: [...(e.context ?? []), note] }) : next(e)
@@ -1546,7 +1710,8 @@ export const register: Register = (on, options) => {
       const u = e.usage
       if (u) await update($, tokens, n => n + u.input_tokens + u.output_tokens + u.cache_creation_input_tokens)
       await update($, turns, n => n + 1)
-      await loadStory($)
+      // a plan that can't be read never costs the turn its XP
+      await loadStory($).catch(() => undefined)
       void refreshStatus($)
       void refreshGit($)
       if (!e.isAborted) await gainXp($, 2)
@@ -1638,6 +1803,7 @@ export const register: Register = (on, options) => {
       wantsPet && !isTerminal ? read($, petLine) : Promise.resolve(''),
     ])
     const g = await read($, git)
+    const plan = await read($, planLabel)
     const C = THEMES[themeName]
     let strip: RenderChildren = null
     if (withStrip && e.surface === 'terminal') {
@@ -1696,16 +1862,21 @@ export const register: Register = (on, options) => {
             <Text color={C[STATUS_TONE[s.status]]} backgroundColor={C.bg} bold>{` [${s.status}] `}</Text>
             <Text color={C.fg} backgroundColor={C.bg} wrap="truncate">{s.title.toUpperCase()}</Text>
           </Box>
-        ) : err ? (
-          <Text color={C.fail} backgroundColor={C.bg} wrap="truncate">{` ?FILE NOT FOUND ERROR  ${err.toUpperCase()}`}</Text>
-        ) : (
+        ) : t || en ? (
           <Box flexDirection="row">
             <Text color={C.dim} backgroundColor={C.bg}>{' TICKET:'}</Text>
             <Text color={C.hi} backgroundColor={C.bg} bold>{t ?? '----'}</Text>
             <Text color={C.dim} backgroundColor={C.bg}>{'  ENV:'}</Text>
             <Text color={en ? C[ENV_TONE[en] ?? 'hi'] : C.dim} backgroundColor={C.bg} bold>{en ?? '---'}</Text>
-            <Text color={C.dim} backgroundColor={C.bg}>{'  /story E12-S03 TO TRACK A BACKLOG ROW'}</Text>
           </Box>
+        ) : (
+          <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
+            {plan
+              ? err
+                ? ` ${err} ISN'T IN ${plan.toUpperCase()} · /story <ID> · /plan TO CHANGE`
+                : ` PLAN ${plan.toUpperCase()} · /story <ID> TO TRACK A ROW`
+              : ' NO PLAN YET · /plan TO POINT AT YOURS'}
+          </Text>
         )}
         {(s || res) && (
           <Box flexDirection="row">
@@ -1790,8 +1961,8 @@ export const register: Register = (on, options) => {
             ))}
           </Box>
         ) : (
-          <Text color={err ? C.fail : C.dim} backgroundColor={C.bg} wrap="truncate">
-            {err ? `?${err.toUpperCase()}` : 'NO STORY. /story E12-S03 · /story M1-14'}
+          <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
+            {err ? `${err} ISN'T IN THE PLAN · /plan TO CHANGE` : 'NO STORY. /story <ID> · /plan TO SET THE PLAN'}
           </Text>
         )}
         <Text color={C.fg} backgroundColor={C.bg}> </Text>
