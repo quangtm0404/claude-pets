@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0 — 2026-10-11
+
+Share ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E7). The board service is updated and live.
+
+- **A live badge** (E7-S01): `/pet card` gives Markdown for your GitHub README. The board draws your pet with what it wears, in your theme's colours, with your level, XP and streak.
+- **Visits** (E7-S02): `/pet visit <github login>` brings your pet to play with a friend's for a minute; the first visit a day gives you both +5 XP. `/pet visits off` stops visits to you.
+- **The diary** (E7-S03): `/pet diary` tells the day in your pet's words; `/pet diary card` copies it as an SVG picture.
+- The pets' pixel art now lives in `hooks/art.ts`, shared by the plugin and the board service.
+
 ## 1.4.0 — 2026-10-11
 
 Play ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E6).

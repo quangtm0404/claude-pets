@@ -3,6 +3,13 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { PluginOptions, RenderChildren, SessionUsage } from 'claude-code'
 import type { RunnerProps } from './runner'
+import {
+  ANGRY_EYE, ART, ITEMS, ITEM_IDS, KID_W, SPRITE_ROWS, SPRITE_W, babySprite, extrasFor, isItemId, nextStage, sprite, stageOf,
+} from './art'
+import type { ItemId, Mood, PetArt, Pose, Stage } from './art'
+
+export { ITEMS, babySprite, extrasFor, sprite, stageOf } from './art'
+export type { ItemId, Mood, Stage } from './art'
 
 import type {
   Failure, FontName, GitInfo, LogLine, PetKind, Story, StoryStatus, StoryTask, TestRun, ThemeName, Usage, UsageWindow,
@@ -783,216 +790,37 @@ async function refreshStatus($: EngineInterface) {
 const PET_ROWS = 3 // 2 rows of pixels (4 px) + the ground row, which carries the HUD
 // The pet needs its strip and the READY. line; info rows fill whatever room is left.
 const PET_MIN_ROWS = PET_ROWS + 1
-const SPRITE_W = 7
-const SPRITE_ROWS = 4
-
-type Pose = 'walkA' | 'walkB' | 'sit' | 'sleep'
-export type Mood = 'happy' | 'grumpy' | 'furious' | 'gameover'
 const GRUMPY_AT = 70
 const FURIOUS_AT = 90
 
-const ANGRY_EYE = 0xff2a2a
-
-type PetDef = {
-  /** Pixel letters to colours; `e` is the eye, `E` the cross eye. */
-  colors: Record<string, number>
-  /** Ears or fin / face / body, 7 pixels wide, facing left. */
-  body: [string, string, string]
-  /** The same three rows when grumpy: ears back, teeth, a tail up. Absent: just the cross eye. */
-  cross?: [string, string, string]
-  /** The bottom row per pose: legs for walkers, a flicking tail for swimmers. */
-  legs: Record<'walkA' | 'walkB' | 'sit', string>
-  /** The letter a closed eye becomes. */
-  fill: string
-  /** Whether a calm pet tucks its tail (top-right of the sprite) when it sits. */
-  tuck: boolean
+type PetDef = PetArt & {
   /** Sound files in sounds/: its everyday voice and its cross one. */
   voice: { happy: string; cross: string }
   ideas: string[]
   emoji: string
 }
 
-export const PETS: Record<PetKind, PetDef> = {
-  cat: {
-    colors: { o: 0xf0a040, e: 0x101010 },
-    body: ['o.o...o', 'eoe..o.', 'oooooo.'],
-    cross: ['.....oo', 'EoE.oo.', 'oooooo.'],
-    legs: { walkA: '.o.o.o.', walkB: 'o.o.o..', sit: 'oooooo.' },
-    fill: 'o', tuck: true, voice: { happy: 'meow', cross: 'meow_grumpy' },
-    ideas: ['Pixel', 'Mochi', 'Byte', 'Sprite'], emoji: '🐈',
-  },
-  dog: {
-    colors: { w: 0xe8d8c0, b: 0x7a4a20, e: 0x101010 },
-    body: ['bb.....', 'wewb..w', 'wwwwww.'],
-    cross: ['.b.....', 'wEwb.w.', 'wwwwww.'],
-    legs: { walkA: '.w.w.w.', walkB: 'w.w.w..', sit: 'wwwwww.' },
-    fill: 'w', tuck: true, voice: { happy: 'woof', cross: 'woof_grumpy' },
-    ideas: ['Chip', 'Bitsy', 'Rex64', 'Turbo'], emoji: '🐕',
-  },
-  crab: {
-    colors: { r: 0xe8452c, d: 0xa82a18, e: 0xffffff },
-    body: ['d.....d', 'dde.edd', '.rrrrr.'],
-    cross: ['dd...dd', 'ddE.Edd', '.rrrrr.'],
-    legs: { walkA: 'r.r.r.r', walkB: '.r.r.r.', sit: '.rrrrr.' },
-    fill: 'd', tuck: false, voice: { happy: 'click', cross: 'click_grumpy' },
-    ideas: ['Ferris', 'Pinchy', 'Clawde', 'Sidestep'], emoji: '🦀',
-  },
-  shark: {
-    colors: { g: 0x7d8ea3, w: 0xe9eef3, e: 0x0d0d0d },
-    body: ['...g..g', 'geggggg', 'wwwwgg.'],
-    cross: ['...g..g', 'gEggggg', '.w.wgg.'],
-    legs: { walkA: '......g', walkB: '.......', sit: '.......' },
-    fill: 'g', tuck: false, voice: { happy: 'chomp', cross: 'grumble_low' },
-    ideas: ['Finn', 'Chompy', 'Bruce', 'Jawsome'], emoji: '🦈',
-  },
-  turtle: {
-    colors: { s: 0x3f8f3a, d: 0x2e6b2b, k: 0x9ccc65, e: 0x101010 },
-    body: ['..sss..', 'kedsds.', '.sssss.'],
-    cross: ['..sss..', '.Edsds.', '.sssss.'],
-    legs: { walkA: '.k...k.', walkB: '..k.k..', sit: '.......' },
-    fill: 'k', tuck: false, voice: { happy: 'hum', cross: 'grumble_low' },
-    ideas: ['Shelly', 'Tank', 'Crush', 'Sheldon'], emoji: '🐢',
-  },
-  mouse: {
-    colors: { m: 0xb8b8c4, p: 0xff9eb5, e: 0x101010 },
-    body: ['.pp....', 'pemmm..', '.mmmmpp'],
-    cross: ['.p.....', 'pEmmm..', '.mmmm.p'],
-    legs: { walkA: '.m.m...', walkB: 'm.m....', sit: '.mmm...' },
-    fill: 'm', tuck: false, voice: { happy: 'squeak', cross: 'grumble_high' },
-    ideas: ['Cheddar', 'Nibbles', 'Clicky', 'Squeak'], emoji: '🐁',
-  },
-  fox: {
-    colors: { f: 0xe8742a, w: 0xf5f5f5, k: 0x2a1a10, e: 0x101010 },
-    body: ['f.f....', 'wef..ff', 'ffffffw'],
-    cross: ['.....ff', 'wEf.ffw', 'ffffff.'],
-    legs: { walkA: '.k.k.k.', walkB: 'k.k.k..', sit: 'ffffff.' },
-    fill: 'f', tuck: true, voice: { happy: 'yip', cross: 'grumble_high' },
-    ideas: ['Rusty', 'Ember', 'Firefox', 'Todd'], emoji: '🦊',
-  },
-  orca: {
-    colors: { k: 0x151515, w: 0xf0f0f0, e: 0xf0f0f0 },
-    body: ['...k...', 'kekkkk.', 'wwwkkkk'],
-    legs: { walkA: '......k', walkB: '.....k.', sit: '.......' },
-    fill: 'k', tuck: false, voice: { happy: 'song', cross: 'grumble_low' },
-    ideas: ['Tux', 'Domino', 'Shamu', 'Oreo'], emoji: '🐋',
-  },
-  whale: {
-    colors: { b: 0x3a6fd0, l: 0x9cc3ff, e: 0x101010 },
-    body: ['.l.....', 'bebbbb.', 'llbbbbb'],
-    cross: ['.......', 'bEbbbb.', 'llbbbbb'],
-    legs: { walkA: '.....bb', walkB: '......b', sit: '.......' },
-    fill: 'b', tuck: false, voice: { happy: 'song', cross: 'grumble_low' },
-    ideas: ['Moby', 'Bubbles', 'Blue', 'Humphrey'], emoji: '🐳',
-  },
-  dolphin: {
-    colors: { g: 0x6fa8dc, w: 0xdfefff, e: 0x101010 },
-    body: ['...g...', '.egggg.', 'gwwwggg'],
-    legs: { walkA: '......g', walkB: '.....g.', sit: '.......' },
-    fill: 'g', tuck: false, voice: { happy: 'whistle', cross: 'grumble_high' },
-    ideas: ['Flipper', 'Echo', 'Splash', 'Clicker'], emoji: '🐬',
-  },
-  giraffe: {
-    colors: { y: 0xf2c14e, o: 0xa0522d, e: 0x101010 },
-    body: ['eyo....', '.y.....', '.yoyoyo'],
-    legs: { walkA: '.y.y.y.', walkB: 'y.y.y..', sit: '.yyyyy.' },
-    fill: 'y', tuck: false, voice: { happy: 'hum', cross: 'grumble_low' },
-    ideas: ['Stretch', 'Patches', 'Highway', 'Geoffrey'], emoji: '🦒',
-  },
-  tiger: {
-    colors: { t: 0xf08a24, k: 0x1a1a1a, e: 0x101010 },
-    body: ['t.t...t', 'ete..t.', 'tktktk.'],
-    cross: ['.....tt', 'EtE.tt.', 'tktktk.'],
-    legs: { walkA: '.t.t.t.', walkB: 't.t.t..', sit: 'tktktk.' },
-    fill: 't', tuck: true, voice: { happy: 'roar', cross: 'grumble_low' },
-    ideas: ['Stripes', 'Rajah', 'Hobbes', 'Tigger'], emoji: '🐅',
-  },
-  squirrel: {
-    colors: { r: 0xb5651d, c: 0xf3d9b1, e: 0x101010 },
-    body: ['r...rr.', 'err.rrr', 'crrrrr.'],
-    legs: { walkA: '.r.r...', walkB: 'r.r....', sit: '.rrr...' },
-    fill: 'r', tuck: false, voice: { happy: 'chitter', cross: 'grumble_high' },
-    ideas: ['Nutmeg', 'Acorn', 'Hazel', 'Scrat'], emoji: '🐿',
-  },
-  penguin: {
-    colors: { k: 0x1c1c28, w: 0xf2f2f2, y: 0xffa31a, e: 0x101010 },
-    body: ['.kk....', 'yewk...', '.wwk...'],
-    legs: { walkA: '.y..y..', walkB: '..yy...', sit: '.yy....' },
-    fill: 'w', tuck: false, voice: { happy: 'honk', cross: 'grumble_high' },
-    ideas: ['Pingu', 'Waddles', 'Tux', 'Skipper'], emoji: '🐧',
-  },
+const PET_LIFE: Record<PetKind, Omit<PetDef, keyof PetArt>> = {
+  cat: { voice: { happy: 'meow', cross: 'meow_grumpy' }, ideas: ['Pixel', 'Mochi', 'Byte', 'Sprite'], emoji: '🐈' },
+  dog: { voice: { happy: 'woof', cross: 'woof_grumpy' }, ideas: ['Chip', 'Bitsy', 'Rex64', 'Turbo'], emoji: '🐕' },
+  crab: { voice: { happy: 'click', cross: 'click_grumpy' }, ideas: ['Ferris', 'Pinchy', 'Clawde', 'Sidestep'], emoji: '🦀' },
+  shark: { voice: { happy: 'chomp', cross: 'grumble_low' }, ideas: ['Finn', 'Chompy', 'Bruce', 'Jawsome'], emoji: '🦈' },
+  turtle: { voice: { happy: 'hum', cross: 'grumble_low' }, ideas: ['Shelly', 'Tank', 'Crush', 'Sheldon'], emoji: '🐢' },
+  mouse: { voice: { happy: 'squeak', cross: 'grumble_high' }, ideas: ['Cheddar', 'Nibbles', 'Clicky', 'Squeak'], emoji: '🐁' },
+  fox: { voice: { happy: 'yip', cross: 'grumble_high' }, ideas: ['Rusty', 'Ember', 'Firefox', 'Todd'], emoji: '🦊' },
+  orca: { voice: { happy: 'song', cross: 'grumble_low' }, ideas: ['Tux', 'Domino', 'Shamu', 'Oreo'], emoji: '🐋' },
+  whale: { voice: { happy: 'song', cross: 'grumble_low' }, ideas: ['Moby', 'Bubbles', 'Blue', 'Humphrey'], emoji: '🐳' },
+  dolphin: { voice: { happy: 'whistle', cross: 'grumble_high' }, ideas: ['Flipper', 'Echo', 'Splash', 'Clicker'], emoji: '🐬' },
+  giraffe: { voice: { happy: 'hum', cross: 'grumble_low' }, ideas: ['Stretch', 'Patches', 'Highway', 'Geoffrey'], emoji: '🦒' },
+  tiger: { voice: { happy: 'roar', cross: 'grumble_low' }, ideas: ['Stripes', 'Rajah', 'Hobbes', 'Tigger'], emoji: '🐅' },
+  squirrel: { voice: { happy: 'chitter', cross: 'grumble_high' }, ideas: ['Nutmeg', 'Acorn', 'Hazel', 'Scrat'], emoji: '🐿' },
+  penguin: { voice: { happy: 'honk', cross: 'grumble_high' }, ideas: ['Pingu', 'Waddles', 'Tux', 'Skipper'], emoji: '🐧' },
 }
+export const PETS = Object.fromEntries(
+  (Object.keys(ART) as PetKind[]).map(k => [k, { ...ART[k], ...PET_LIFE[k] }]),
+) as Record<PetKind, PetDef>
 export const PET_KINDS = Object.keys(PETS) as PetKind[]
 export const isPetKind = (x: unknown): x is PetKind => typeof x === 'string' && (PETS as Record<string, unknown>)[x] !== undefined
-
-// ── Growing up (E6-S03) ──────────────────────────────────────────────────────
-// A baby until LV10 (the helpers' 5×3 shape), then the full sprite; legends
-// twinkle, and mythic pets grow wings. XP is the player's, so switching animals
-// never undoes a stage.
-export type Stage = 'baby' | 'adult' | 'legend' | 'mythic'
-export const STAGES: { stage: Stage; at: number }[] = [
-  { stage: 'baby', at: 1 }, { stage: 'adult', at: 10 }, { stage: 'legend', at: 25 }, { stage: 'mythic', at: 50 },
-]
-export const stageOf = (level: number): Stage => STAGES.filter(x => level >= x.at).pop()?.stage ?? 'baby'
-export const nextStage = (level: number) => STAGES.find(x => x.at > level) ?? null
-
-// ── The coin shop (E6-S02) ───────────────────────────────────────────────────
-// Each item is a few pixels placed from the pet's eye: [forward, down, colour],
-// forward being the way the pet faces. One item per slot.
-export type ItemId = 'bow' | 'scarf' | 'shades' | 'hat' | 'lantern' | 'crown'
-type Slot = 'head' | 'face' | 'neck' | 'hand'
-export const ITEMS: Record<ItemId, { name: string; price: number; slot: Slot; px: [number, number, number][] }> = {
-  bow: { name: 'Pink bow', price: 15, slot: 'head', px: [[-2, -1, 0xff7eb6], [-3, -1, 0xff7eb6]] },
-  scarf: { name: 'Red scarf', price: 25, slot: 'neck', px: [[-1, 1, 0xe53935], [-2, 1, 0xe53935], [-3, 2, 0xb71c1c]] },
-  shades: { name: 'Sunglasses', price: 40, slot: 'face', px: [[0, 0, 0x33ccff], [-1, 0, 0x111111], [1, 0, 0x111111]] },
-  hat: { name: 'Top hat', price: 60, slot: 'head', px: [[1, -1, 0x2b2b2b], [0, -1, 0x2b2b2b], [-1, -1, 0x2b2b2b], [0, -2, 0x2b2b2b]] },
-  lantern: { name: 'Tết lantern', price: 88, slot: 'hand', px: [[1, 1, 0xe53935], [1, 2, 0xffc107]] },
-  crown: { name: 'Crown', price: 200, slot: 'head', px: [[1, -1, 0xffd23f], [0, -1, 0xff3b3b], [-1, -1, 0xffd23f], [0, -2, 0xffd23f]] },
-}
-export const ITEM_IDS = Object.keys(ITEMS) as ItemId[]
-export const isItemId = (x: unknown): x is ItemId => typeof x === 'string' && Object.hasOwn(ITEMS, x)
-
-/** Where the eye is in a sprite (source coordinates, facing left), or null. */
-function eyeOf(rows: string[]): [number, number] | null {
-  for (let y = 0; y < rows.length; y++) {
-    const x = rows[y]!.search(/[eE]/)
-    if (x >= 0) return [x, y]
-  }
-  return null
-}
-
-/** Pixels drawn over the pet in its own coordinates: stage effects, then what it wears. */
-export function extrasFor(kind: PetKind, stage: Stage, items: ItemId[], tick: number): [number, number, number][] {
-  const out: [number, number, number][] = []
-  const shape = stage === 'baby' ? babySprite(kind, 'walkA') : sprite(kind, 'walkA')
-  const sw = shape[0]?.length ?? SPRITE_W
-  if (stage === 'legend' || stage === 'mythic') out.push(tick % 10 < 5 ? [-1, 0, 0xfff6a0] : [sw, 1, 0xfff6a0])
-  if (stage === 'mythic') {
-    const up = tick % 6 < 3
-    out.push([sw - 3, up ? 0 : 1, 0xf5f5ff], [sw - 2, up ? 0 : 1, 0xf5f5ff], [sw - 1, up ? 0 : 1, 0xdde4ff])
-  }
-  const eye = eyeOf(shape)
-  if (eye) for (const id of items) for (const [fwd, dy, c] of ITEMS[id].px) out.push([eye[0] - fwd, eye[1] + dy, c])
-  return out
-}
-
-/** A helper (a subagent's pet), or a baby: the full sprite's front half, 5×3 pixels (face, body, legs). */
-export function babySprite(kind: PetKind, pose: Pose, mood: Mood = 'happy'): string[] {
-  return sprite(kind, pose, mood).slice(1).map(row => row.slice(0, KID_W))
-}
-const KID_W = 5
-
-export function sprite(kind: PetKind, pose: Pose, mood: Mood = 'happy'): string[] {
-  const def = PETS[kind]
-  const isCross = mood === 'grumpy' || mood === 'furious'
-  let body: string[] = isCross ? (def.cross ?? def.body.map(r => r.replace(/e/g, 'E'))) : def.body.slice()
-  // eyes closed while asleep
-  if (pose === 'sleep') body = body.map(row => row.replace(/[eE]/g, def.fill))
-  // tail tucked in while sitting calmly (a cross pet keeps it up)
-  if ((pose === 'sit' || pose === 'sleep') && def.tuck && !isCross) {
-    body = body.map((row, i) => (i <= 1 ? row.slice(0, 4) + '...' : row))
-  }
-  return [...body, def.legs[pose === 'sleep' ? 'sit' : pose]]
-}
 
 function b64(bytes: Uint8Array): string {
   let bin = ''
@@ -1041,6 +869,8 @@ export type PetFrame = {
   items?: ItemId[]
   /** A rocket flame under it (E6-S04). */
   flame?: boolean
+  /** A friend's pet on a visit (E7-S02). */
+  guest?: { kind: PetKind; x: number; dir: 1 | -1; pose: Pose; stage: Stage; items: ItemId[] }
 }
 
 const COIN = 0xffd23f, COIN_SHINE = 0xfff6a0, BUG = 0xb04cff, BUG_LEGS = 0x6a1fb0
@@ -1110,24 +940,30 @@ export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: n
       }
     })
   }
-  const x0 = Math.round(f.x), y0 = -f.lift
-  const stage = f.stage ?? 'adult'
-  const rows = stage === 'baby' ? babySprite(f.kind, f.pose, f.mood) : sprite(f.kind, f.pose, f.mood)
-  const sw = rows[0]?.length ?? SPRITE_W, top = y0 + (SPRITE_ROWS - rows.length)
-  // the sprite is drawn facing left; facing right mirrors it
-  const at = (sx: number) => x0 + (f.dir === 1 ? sw - 1 - sx : sx)
-  rows.forEach((row, sy) => {
-    for (let sx = 0; sx < sw; sx++) {
-      const c = colors[row[sx] ?? '.']
-      if (c !== undefined) set(at(sx), top + sy, c)
+  /** One pet at (x, -lift): its stage's sprite, what it wears, and a rocket flame when asked. */
+  const drawPet = (kind: PetKind, stage: Stage, pose: Pose, mood: Mood, items: ItemId[], x: number, dir: 1 | -1, lift: number, flame: boolean) => {
+    const palette: Record<string, number> = { E: ANGRY_EYE, ...PETS[kind].colors }
+    const rows = stage === 'baby' ? babySprite(kind, pose, mood) : sprite(kind, pose, mood)
+    const sw = rows[0]?.length ?? SPRITE_W, top = -lift + (SPRITE_ROWS - rows.length)
+    // the sprite is drawn facing left; facing right mirrors it
+    const at = (sx: number) => x + (dir === 1 ? sw - 1 - sx : sx)
+    rows.forEach((row, sy) => {
+      for (let sx = 0; sx < sw; sx++) {
+        const c = palette[row[sx] ?? '.']
+        if (c !== undefined) set(at(sx), top + sy, c)
+      }
+    })
+    for (const [sx, sy, c] of extrasFor(kind, stage, items, f.tick ?? 0)) set(at(sx), top + sy, c)
+    if (flame) {
+      const mid = Math.floor(sw / 2), t = f.tick ?? 0
+      set(at(mid), top + rows.length, t % 2 ? 0xff9800 : 0xffeb3b)
+      set(at(mid + 1), top + rows.length, t % 2 ? 0xffeb3b : 0xff5722)
     }
-  })
-  for (const [sx, sy, c] of extrasFor(f.kind, stage, f.items ?? [], f.tick ?? 0)) set(at(sx), top + sy, c)
-  if (f.flame) {
-    const mid = Math.floor(sw / 2), t = f.tick ?? 0
-    set(at(mid), top + rows.length, t % 2 ? 0xff9800 : 0xffeb3b)
-    set(at(mid + 1), top + rows.length, t % 2 ? 0xffeb3b : 0xff5722)
   }
+  // a visiting friend's pet (E7-S02), behind the main pet
+  if (f.guest) drawPet(f.guest.kind, f.guest.stage, f.guest.pose, 'happy', f.guest.items, Math.round(f.guest.x), f.guest.dir, 0, false)
+  const x0 = Math.round(f.x)
+  drawPet(f.kind, f.stage ?? 'adult', f.pose, f.mood, f.items ?? [], x0, f.dir, f.lift, f.flame ?? false)
   return { px, W, H, x0 }
 }
 
@@ -1289,6 +1125,8 @@ const petSim = {
   toolSince: null as number | null,
   toolName: '',
   wearing: [] as ItemId[],
+  /** A friend's pet visiting for a minute (E7-S02). */
+  guest: null as null | { login: string; kind: PetKind; level: number; wearing: ItemId[]; x: number; dir: 1 | -1; pose: Pose; until: number },
   ballX: null as number | null,
   lastActive: 0,
   isWorking: false,
@@ -1502,6 +1340,8 @@ export async function shopCommand($: EngineInterface, verb: 'buy' | 'wear', what
 /** What the pet is reacting to right now, for /pet stats (E6-S04). */
 async function nowLine($: EngineInterface): Promise<string[]> {
   if (petSim.isConflict) return ['Now: PUZZLED BY A MERGE CONFLICT (resolve it and commit)']
+  const g = petSim.guest
+  if (g && g.until > (await $.clock.now())) return [`Now: PLAYING WITH ${g.login.toUpperCase()}'S ${g.kind.toUpperCase()} (LV${g.level})`]
   const r = petSim.react
   return r?.text && r.until > (await $.clock.now()) ? [`Now: ${r.text}`] : []
 }
@@ -1526,12 +1366,64 @@ async function creditRun($: EngineInterface, score: number) {
 }
 
 const LONG_TOOL_MS = 60_000
+const VISIT_MS = 60_000
 const PUSH_RE = /\bgit\s+push\b/
 const CONFLICT_RE = /CONFLICT \(|Automatic merge failed|could not apply [0-9a-f]+|Unmerged paths/
 const SETTLE_RE = /\bgit\s+(commit|status|merge\s+--(continue|abort)|rebase\s+--(continue|abort|skip)|cherry-pick\s+--(continue|abort))\b/
 
+// ── The diary (E7-S03): one day of play, kept on this machine ───────────────
+export type Diary = {
+  day: string
+  xp: number; coins: number; bugs: number; helpers: number; turns: number; runnerXp: number; visits: number
+  green: number; red: number
+  stories: string[]
+}
+const freshDiary = (day: string): Diary => ({ day, xp: 0, coins: 0, bugs: 0, helpers: 0, turns: 0, runnerXp: 0, visits: 0, green: 0, red: 0, stories: [] })
+
+async function readDiary($: EngineInterface): Promise<Diary> {
+  const today = dayOf(await $.clock.now())
+  const d = (await $.store.get('diary')) as Diary | undefined
+  return d && d.day === today ? { ...freshDiary(today), ...d } : freshDiary(today)
+}
+
+async function bumpDiary($: EngineInterface, change: (d: Diary) => void) {
+  const d = await readDiary($)
+  change(d)
+  await $.store.set('diary', d)
+}
+
+export function diaryText(d: Diary, pet: { kind: PetKind; name: string }, wx: Weather | null, unit: TempUnit): string {
+  const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`
+  return [
+    `${pet.name.toUpperCase()}'S DIARY · ${d.day}`,
+    `Dear diary, today I collected ◆${d.coins}, squashed ${n(d.bugs, 'bug')} and earned ${d.xp} XP.`,
+    `Tests: ${d.green} green, ${d.red} red · Helpers home: ${d.helpers} · Turns: ${d.turns} · Runner: ${d.runnerXp} XP · Visits: ${d.visits}`,
+    d.stories.length ? `Worked on: ${d.stories.join(', ')}` : 'Worked on: no tracked story',
+    wx ? `Weather: ${wx.place}, ${fmtTemp(wx.tempC, unit)}, ${wx.label.toLowerCase()}.` : '',
+  ].filter(Boolean).join('\n')
+}
+
+/** The diary as an SVG card: the pet, then the day's lines. */
+export function diarySvg(text: string, pet: { kind: PetKind }, level: number, items: ItemId[], C: Palette): string {
+  const lines = text.split('\n')
+  const w = 640, h = 44 + lines.length * 20
+  const frame: PetFrame = {
+    kind: pet.kind, columns: 9, x: 1, dir: 1, pose: 'sit', mood: 'happy', lift: 0, bubble: null, ballX: null,
+    coins: [], bugs: [], sparkle: false, bg: C.bg, ground: C.dim, cursor: null, hud: [], stage: stageOf(level), items, tick: 0,
+  }
+  const { px, W, H } = petPixels(frame)
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
+    `<rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="8" fill="${C.bg}" stroke="${C.dim}" stroke-width="2"/>`,
+    `<g transform="translate(14 ${h / 2 - 20})" shape-rendering="crispEdges">${pixelRects(px, W, H, 10)}</g>`,
+    `<g font-family="${SVG_FONT}" font-size="13">`,
+    ...lines.map((l, i) => `<text x="112" y="${30 + i * 20}" fill="${i === 0 ? C.hi : i === 1 ? C.fg : C.dim}"${i === 0 ? ' font-weight="bold"' : ''}>${esc(l)}</text>`),
+    '</g></svg>',
+  ].join('')
+}
+
 // ── Profile, pet board, streaks and achievements (E3) ───────────────────────
-export type XpReason = 'coin' | 'bug' | 'helper' | 'green' | 'turn' | 'ball' | 'game' | 'other'
+export type XpReason = 'coin' | 'bug' | 'helper' | 'green' | 'turn' | 'ball' | 'game' | 'visit' | 'other'
 export type Profile = {
   since: string
   totals: { xp: number; coins: number; bugs: number; helpers: number; green: number; turns: number; balls: number }
@@ -1610,6 +1502,15 @@ async function bumpProfile($: EngineInterface, change: (p: Profile) => void, pen
 async function recordXp($: EngineInterface, n: number, why: XpReason, count: number, level: number) {
   const pet = await readPet($)
   const today = dayOf(await $.clock.now())
+  await bumpDiary($, d => {
+    d.xp += n
+    if (why === 'coin') d.coins += count
+    if (why === 'bug') d.bugs += count
+    if (why === 'helper') d.helpers += 1
+    if (why === 'turn') d.turns += 1
+    if (why === 'game') d.runnerXp += n
+    if (why === 'visit') d.visits += 1
+  })
   const p = await bumpProfile($, prof => {
     prof.totals.xp += n
     prof.byKind[pet.kind] = (prof.byKind[pet.kind] ?? 0) + n
@@ -1689,6 +1590,12 @@ async function boardScore($: EngineInterface) {
   return { xp: p.totals.xp, level: levelOf(p.totals.xp), favPet: fav, streak: p.streak.days, bestStreak: Math.max(p.streak.best, p.streak.days) }
 }
 
+/** What the badge and visitors see (E7): what the pet wears and the theme's colours. */
+async function boardLook($: EngineInterface) {
+  const C = paletteOf(await read($, theme))
+  return { wearing: petSim.wearing, fg: C.fg, bg: C.bg }
+}
+
 /** Sends a joined player's score, at most once a minute; a refusal stops it for the session (E4-S03). */
 async function syncScore($: EngineInterface, force = false) {
   const link = await readLink($)
@@ -1700,8 +1607,18 @@ async function syncScore($: EngineInterface, force = false) {
     const r = await $.http.fetch(`${link.url}/v1/score`, {
       method: 'PUT',
       headers: { authorization: `Bearer ${link.apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify(await boardScore($)),
+      body: JSON.stringify({ ...(await boardScore($)), look: await boardLook($) }),
     })
+    if (r.ok) {
+      // friends who visited since the last score (E7-S02)
+      const d = JSON.parse(r.text || '{}') as { visitors?: { login: string; favPet: string }[] }
+      const pet = await readPet($)
+      for (const v of (d.visitors ?? []).slice(0, 5)) {
+        $.ui.toast(`▶ ${v.login.toUpperCase()}'S ${v.favPet.toUpperCase()} VISITED ${pet.name.toUpperCase()} · +5 XP`, { timeoutMs: 7000 })
+        await gainXp($, 5, 'visit')
+      }
+      if (d.visitors?.length) await saveXp($)
+    }
     if (r.status === 401) {
       await $.store.set('board', null)
       $.ui.toast('▶ THE BOARD NO LONGER KNOWS THIS KEY · /pet join TO REJOIN', { timeoutMs: 8000 })
@@ -1989,6 +1906,25 @@ async function petTick($: EngineInterface) {
   const working = s.kids.filter(k => k.state === 'work').length
   if (working && !s.react && s.mood !== 'gameover') line = `${line} · ${working} HELPER${working === 1 ? '' : 'S'} OUT`
 
+  // a visiting pet walks up to ours, and they play until the minute is up (E7-S02)
+  if (s.guest && now > s.guest.until) s.guest = null
+  const g = s.guest
+  if (g) {
+    const side = g.x > s.x ? 1 : -1
+    const target = s.x + side * (SPRITE_W + 2)
+    if (Math.abs(g.x - target) > 1) {
+      g.dir = target > g.x ? 1 : -1
+      g.x += 0.6 * g.dir
+      g.pose = walk(1)
+    } else {
+      g.dir = s.x > g.x ? 1 : -1
+      g.pose = s.tick % 20 < 10 ? 'sit' : walk(2)
+      if (!s.react && s.mood !== 'gameover' && s.tick % 20 < 6) bubble = { glyph: '♥', color: hex(C.fail) }
+    }
+    g.x = Math.max(0, Math.min(s.columns - SPRITE_W, g.x))
+    if (!s.react && s.mood !== 'gameover') line = `${name} PLAYS WITH ${g.login.toUpperCase()}'S ${g.kind.toUpperCase()}`
+  }
+
   // pick-ups and stomps
   const left = s.x - 0.5, right = s.x + SPRITE_W - 0.5
   const kept = s.coins.filter(c => c < left || c > right)
@@ -2018,6 +1954,7 @@ async function petTick($: EngineInterface) {
     cursor: !s.isWorking && s.tick % 8 < 4 ? { color: hex(C.fg) } : null,
     hud: hud(C, name, line),
     stage: stageOf(levelOf(s.xp)), items: s.wearing, flame,
+    guest: s.guest ? { kind: s.guest.kind, x: s.guest.x, dir: s.guest.dir, pose: s.guest.pose, stage: stageOf(s.guest.level), items: s.guest.wearing } : undefined,
   }
   if (s.isMounted) {
     const cells = petCells(frame)
@@ -2404,6 +2341,10 @@ export const PET_HELP = [
   '  /pet board                 your profile, streak and achievements',
   '  /pet board world           the world board',
   '  /pet join · /pet leave     join it with GitHub, or delete your entry',
+  '  /pet card                  a live badge of your pet for your GitHub README',
+  '  /pet visit <github login>  bring your pet to a friend\'s for a minute (+5 XP each, once a day)',
+  '  /pet visits on|off         let friends visit you, or not',
+  '  /pet diary [card]          today, in your pet\'s words; card copies it as a picture',
   '',
   'LOOK',
   '  /retro                     show or hide the band',
@@ -2636,6 +2577,45 @@ export const register: Register = (on, options) => {
           'XP: +1 coin (a tool call that worked) · +5 bug squashed (an error) · +10 green test run · +2 per turn · +2 ball · runner: +1 a bug jumped, up to 20 a turn · helpers: +1 per subagent call that worked, +5 when its job is done',
         ].join('\n'),
       }
+    } else if (/^card$/i.test(args)) {
+      const link = await readLink($)
+      if (!link) return { text: 'The badge is for players on the world board: /pet join first.' }
+      const md = `[![${link.login}'s Claude Pet](${link.url}/card/${link.login}.svg)](https://github.com/quangtm0404/claude-pets)`
+      const copied = await $.ui.copy({ text: md })
+      return { text: `Your live badge, for a GitHub README (it updates as you play):\n\n${md}\n\n${copied.isCopied ? '(copied to the clipboard)' : '(copy it from here)'}` }
+    } else if (/^visit\s+\S+$/i.test(args)) {
+      const link = await readLink($)
+      if (!link) return { text: 'Visits are for players on the world board: /pet join first.' }
+      const who = args.replace(/^visit\s+@?/i, '')
+      const r = await $.http.fetch(`${link.url}/v1/pet/${encodeURIComponent(who)}`, { headers: { authorization: `Bearer ${link.apiKey}` } }).catch(() => null)
+      if (!r) return { text: 'Could not reach the board.' }
+      const d = JSON.parse(r.text || '{}') as { login?: string; level?: number; favPet?: string; wearing?: string[]; isFirstToday?: boolean; error?: string }
+      if (!r.ok || !d.login || !isPetKind(d.favPet)) return { text: d.error ? `${d.error}.` : `Could not visit ${who} (${r.status}).` }
+      const now = await $.clock.now()
+      petSim.guest = {
+        login: d.login, kind: d.favPet, level: d.level ?? 1, wearing: (d.wearing ?? []).filter(isItemId),
+        x: Math.max(0, petSim.columns - SPRITE_W - 1), dir: -1, pose: 'walkA', until: now + VISIT_MS,
+      }
+      if (d.isFirstToday) await gainXp($, 5, 'visit')
+      return { text: `${d.login}'s ${d.favPet} (LV${d.level}) comes to play for a minute.${d.isFirstToday ? ' +5 XP for you both, once a day.' : ''}` }
+    } else if (/^visits\s+(on|off)$/i.test(args)) {
+      const link = await readLink($)
+      if (!link) return { text: 'Visits are for players on the world board: /pet join first.' }
+      const isOff = /off$/i.test(args)
+      const r = await $.http.fetch(`${link.url}/v1/me`, {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${link.apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ visitsOff: isOff }),
+      }).catch(() => null)
+      if (!r?.ok) return { text: 'Could not reach the board.' }
+      return { text: isOff ? 'Visits off: nobody can bring their pet to yours.' : 'Visits on: friends can /pet visit you.' }
+    } else if (/^diary(\s+card)?$/i.test(args)) {
+      const [d, pet, wx, themeName] = await Promise.all([readDiary($), readPet($), read($, weather), read($, theme)])
+      const text = diaryText(d, pet, wx, CFG.temperatureUnit)
+      if (!/card$/i.test(args)) return { text: `${text}\n\n/pet diary card copies it as an SVG picture to share.` }
+      await loadXp($)
+      const copied = await $.ui.copy({ text: diarySvg(text, pet, levelOf(petSim.xp), petSim.wearing, paletteOf(themeName)) })
+      return { text: copied.isCopied ? 'Copied the diary card as SVG: paste it into a file named diary.svg to share it.' : 'Could not copy the card here.' }
     } else if (/^shop$/i.test(args)) {
       return { text: shopText(await readWallet($)) }
     } else if (/^(buy|wear)\s+\S/i.test(args)) {
@@ -2846,6 +2826,8 @@ export const register: Register = (on, options) => {
       void refreshStatus($)
       void refreshGit($)
       if (!e.isAborted) await gainXp($, 2, 'turn')
+      const sid = await read($, storyId)
+      if (sid && (await read($, story))) await bumpDiary($, d => void (d.stories.includes(sid) || d.stories.push(sid)))
       if (!e.isAborted && e.durationMs >= DONE_SOUND_AFTER_MS) {
         $.ui.toast(`▶ DONE IN ${fmtDuration(e.durationMs)}. READY.`, { timeoutMs: 6000 })
         void petVoice($)
@@ -2906,6 +2888,7 @@ export const register: Register = (on, options) => {
       const res = parseTests(line.detail, ran.text ?? '')
       if (res) {
         await update($, tests, () => res)
+        await bumpDiary($, d => (res.failed ? d.red++ : d.green++))
         if (res.failed) petReact('!', 'fail', 3500, await $.clock.now(), false, { text: `WINCES: ${res.failed} FAILING` })
         else petReact('♪', 'pass', 4000, await $.clock.now(), true, { text: 'DANCES: ALL GREEN!', kind: 'dance' })
         if (res.failed) {

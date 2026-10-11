@@ -726,7 +726,7 @@ test('E4-S03: a joined player\'s score is sent after a turn, with exactly the bo
   const put = calls.find(c => c.url === 'https://board.test/v1/score')
   expect(put?.method).toBe('PUT')
   expect(put?.auth).toBe('Bearer cp_' + 'a'.repeat(64))
-  expect(JSON.parse(put?.body ?? '{}')).toEqual({ xp: 2, level: 1, favPet: 'cat', streak: 1, bestStreak: 1 })
+  expect(JSON.parse(put?.body ?? '{}')).toEqual({ xp: 2, level: 1, favPet: 'cat', streak: 1, bestStreak: 1, look: { wearing: [], fg: '#5FE1FF', bg: '#06131F' } })
 })
 
 test('E4-S04/S02: /pet board world shows the board; /pet leave deletes the entry and forgets the key', { options: BOARD } as never, async ($, on) => {
@@ -979,4 +979,81 @@ test('E6-S04: the pet dances on green, winces on red, rides a rocket on a push, 
   expect(merged).toContain('PUZZLED BY A MERGE CONFLICT')
   const committed = await now('git commit -am fix')
   expect(committed ?? '').not.toContain('MERGE CONFLICT')
+})
+
+// ── E7: share ───────────────────────────────────────────────────────────────
+const KEY = 'cp_' + 'a'.repeat(64)
+/** The board's E7 routes: alice is joined; bob's fox can be visited; carol takes no visits. */
+function friendsApi(on: On, visitors: { login: string; favPet: string }[] = []) {
+  const calls: { url: string; method: string; body?: string }[] = []
+  on('http.fetch', (_$, e) => {
+    const { url, init } = e as { url: string; init?: { method?: string; body?: string } }
+    calls.push({ url, method: init?.method ?? 'GET', body: init?.body })
+    const reply = (status: number, body: unknown) => ({ value: { status, ok: status < 300, headers: {}, text: JSON.stringify(body) } }) as never
+    if (url === 'https://board.test/v1/pet/bob') return reply(200, { login: 'bob', level: 9, favPet: 'fox', wearing: ['scarf'], isFirstToday: true })
+    if (url === 'https://board.test/v1/pet/carol') return reply(403, { error: "carol isn't taking visits" })
+    if (url === 'https://board.test/v1/me') return reply(200, { visitsOff: true })
+    if (url === 'https://board.test/v1/score') return reply(200, { rank: 2, visitors })
+    return reply(404, { error: 'not found' })
+  })
+  return calls
+}
+
+test('E7-S01: /pet card gives the badge Markdown for a joined player, and copies it', { options: BOARD } as never, async ($, on) => {
+  const store = repo(on, {})
+  friendsApi(on)
+  let copied = ''
+  on('ui.copy', (_$, e) => ((copied = e.text), { value: { isCopied: true } }) as never)
+  expect((await $.command.run(run('pet', 'card'))).text).toContain('/pet join first')
+  store.board = { url: 'https://board.test', login: 'alice', apiKey: KEY }
+  const ran = await $.command.run(run('pet', 'card'))
+  const md = "[![alice's Claude Pet](https://board.test/card/alice.svg)](https://github.com/quangtm0404/claude-pets)"
+  expect(ran.text).toContain(md)
+  expect(copied).toBe(md)
+})
+
+test('E7-S02: /pet visit brings a friend\'s pet for a minute, +5 XP the first time a day', { options: BOARD } as never, async ($, on) => {
+  const store = repo(on, {})
+  store.board = { url: 'https://board.test', login: 'alice', apiKey: KEY }
+  friendsApi(on)
+  const ran = await $.command.run(run('pet', 'visit @bob'))
+  expect(ran.text).toBe("bob's fox (LV9) comes to play for a minute. +5 XP for you both, once a day.")
+  const stats = (await $.command.run(run('pet', 'stats'))).text
+  expect(stats).toContain("Now: PLAYING WITH BOB'S FOX (LV9)")
+  expect(stats).toContain('XP 5')
+  expect((await $.command.run(run('pet', 'visit carol'))).text).toBe("carol isn't taking visits.")
+})
+
+test('E7-S02: visitors come back with the score: a toast and +5 XP each; /pet visits off tells the board', { options: BOARD } as never, async ($, on) => {
+  const toasts: string[] = []
+  const store = repo(on, {}, {}, toasts)
+  store.board = { url: 'https://board.test', login: 'alice', apiKey: KEY }
+  const calls = friendsApi(on, [{ login: 'bob', favPet: 'fox' }])
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't', reason: 'answer' } as never)
+  expect(toasts).toContain("▶ BOB'S FOX VISITED PIXEL · +5 XP")
+  expect(store.petXp).toBe(7) // 2 for the turn, 5 for the visit
+  const off = await $.command.run(run('pet', 'visits off'))
+  expect(off.text).toContain('Visits off')
+  expect(calls.find(c => c.url === 'https://board.test/v1/me')?.body).toBe('{"visitsOff":true}')
+})
+
+test('E7-S03: /pet diary tells the day; the card is an SVG picture', async ($, on) => {
+  const store = repo(on, { 'docs/backlog/BACKLOG.md': STORY_MD })
+  on('tool.call', () => ({ result: {}, text: '  12 passed (3s)' }) as never)
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  let copied = ''
+  on('ui.copy', (_$, e) => ((copied = e.text), { value: { isCopied: true } }) as never)
+  await $.command.run(run('story', 'E12-S03'))
+  await $.tool.call({ tool: 'Bash', command: 'npx playwright test' } as never)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't', reason: 'answer' } as never)
+  const diary = (await $.command.run(run('pet', 'diary'))).text
+  expect(diary).toContain("PIXEL'S DIARY · 2026-10-09")
+  expect(diary).toContain('Tests: 1 green, 0 red')
+  expect(diary).toContain('Turns: 1')
+  expect(diary).toContain('Worked on: E12-S03')
+  expect((store.diary as { xp: number }).xp).toBe(12) // 10 for green, 2 for the turn
+  const card = await $.command.run(run('pet', 'diary card'))
+  expect(card.text).toContain('Copied the diary card as SVG')
+  expect(copied).toMatch(/^<svg [^>]*>.*PIXEL&#39;S DIARY|^<svg [^>]*>.*PIXEL'S DIARY/)
 })

@@ -92,6 +92,12 @@ Your name comes from the `playerName` setting, else git's `user.name`, else your
 
 The board runs at `https://claude-pets-board.claude-pets-leaderboard.workers.dev` (a Cloudflare Worker; the code is in [server/](server/README.md)). Nothing is sent until you run `/pet join`. To turn the world board off entirely, empty the `leaderboardUrl` setting. To run your own, follow [server/README.md](server/README.md) and point the two settings at it.
 
+### Share your pet (opt-in, for players on the world board)
+- **`/pet card`**: a live badge for your GitHub profile README, drawn by the board in your theme's colours with what your pet wears. It updates as you play; `/pet leave` removes it.
+  `[![my Claude Pet](https://claude-pets-board.claude-pets-leaderboard.workers.dev/card/<you>.svg)](https://github.com/quangtm0404/claude-pets)`
+- **`/pet visit <github login>`**: your pet plays with a friend's in your band for a minute. The first visit a day between two players gives you both +5 XP; they hear about it after their next turn. `/pet visits off` stops others visiting you.
+- **`/pet diary`**: today in your pet's words (coins, bugs, tests, turns, helpers, the runner, visits, the stories you worked on, the weather). `/pet diary card` copies it as an SVG picture. The diary stays on your machine.
+
 ### Guardrails
 - **Generated files**: Claude's edits to files marked `@generated`, `DO NOT EDIT` or "generated from … regenerate" are refused, pointing back at their source.
 - **Risky commands**: before `terraform apply`/`destroy`, Azure resource changes, force pushes, pushes to `main`/`release`/`prod`, `kubectl`/`helm` changes, or anything hitting a PROD URL, you're asked: **Run it / Allow for this session / Block it**.

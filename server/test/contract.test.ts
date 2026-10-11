@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { PETS, levelOf } from '../src/worker.ts'
+import { PETS, levelOf, parseLook } from '../src/worker.ts'
 
 const plugin = readFileSync(new URL('../../plugins/pixel-pets/hooks/register.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const types = readFileSync(new URL('../../plugins/pixel-pets/types/index.d.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
@@ -26,4 +26,11 @@ test('the plugin sends exactly the fields the service reads', () => {
   for (const field of ['xp', 'level', 'favPet', 'streak', 'bestStreak']) assert.ok(body[0].includes(`${field}:`), field)
   assert.ok(plugin.includes("JSON.stringify({ githubToken: d.access_token })"), 'join sends githubToken')
   assert.ok(plugin.includes('`${link.url}/v1/score`') && plugin.includes('`${CFG.leaderboardUrl}/v1/join`') && plugin.includes('/v1/board?limit=20') && plugin.includes('`${link.url}/v1/me`'), 'routes')
+})
+
+test('the look the plugin sends is one the service keeps (E7)', () => {
+  assert.ok(plugin.includes('look: await boardLook($)'), 'the score carries the look')
+  assert.ok(/return \{ wearing: petSim\.wearing, fg: C\.fg, bg: C\.bg \}/.test(plugin), 'boardLook() shape')
+  assert.deepEqual(parseLook({ wearing: ['hat', 'scarf'], fg: '#5FE1FF', bg: '#06131F' }), { wearing: ['hat', 'scarf'], fg: '#5FE1FF', bg: '#06131F' })
+  assert.ok(plugin.includes('/v1/pet/${encodeURIComponent(who)}') && plugin.includes('`${link.url}/v1/me`'), 'visit routes')
 })

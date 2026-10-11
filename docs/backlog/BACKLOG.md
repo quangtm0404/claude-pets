@@ -436,11 +436,11 @@ So that the pet feels part of the session.
 
 </details>
 
-### E7 · Share - ⬜ To do
+### E7 · Share - ✅ Done
 
 **Outcome.** Your pet can be seen and visited by other people, if you want it to be.
 
-<details><summary><b>E7-S01</b> - as a <b>player</b>, I want <b>a live badge of my pet for my GitHub profile</b> · ⬜ To do · 5 pts</summary>
+<details><summary><b>E7-S01</b> - as a <b>player</b>, I want <b>a live badge of my pet for my GitHub profile</b> · ✅ Done · 5 pts</summary>
 
 So that people can see my pet in my README.
 
@@ -452,14 +452,14 @@ So that people can see my pet in my README.
 
 | Task | Kind | Status |
 |---|---|---|
-| Card route on the Worker, with caching | technical | ⬜ To do |
-| `/pet card` command | technical | ⬜ To do |
-| Card content, a left player and the cache asserted | testing | ⬜ To do |
-| Redeploy the Worker | deployment | ⬜ To do |
+| Card route on the Worker, with caching | technical | ✅ Done |
+| `/pet card` command | technical | ✅ Done |
+| Card content, a left player and the cache asserted | testing | ✅ Done |
+| Redeploy the Worker | deployment | ✅ Done |
 
 </details>
 
-<details><summary><b>E7-S02</b> - as a <b>player</b>, I want <b>to visit a friend's pet</b> · ⬜ To do · 5 pts</summary>
+<details><summary><b>E7-S02</b> - as a <b>player</b>, I want <b>to visit a friend's pet</b> · ✅ Done · 5 pts</summary>
 
 So that playing feels shared.
 
@@ -470,12 +470,12 @@ So that playing feels shared.
 
 | Task | Kind | Status |
 |---|---|---|
-| Visit route on the Worker and the guest pet in the band | technical | ⬜ To do |
-| Visit, the daily bonus and visits-off asserted | testing | ⬜ To do |
+| Visit route on the Worker and the guest pet in the band | technical | ✅ Done |
+| Visit, the daily bonus and visits-off asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E7-S03</b> - as a <b>player</b>, I want <b>a diary card at the end of my day</b> · ⬜ To do · 3 pts</summary>
+<details><summary><b>E7-S03</b> - as a <b>player</b>, I want <b>a diary card at the end of my day</b> · ✅ Done · 3 pts</summary>
 
 So that I can look back on, and share, what my pet and I did.
 
@@ -486,8 +486,8 @@ So that I can look back on, and share, what my pet and I did.
 
 | Task | Kind | Status |
 |---|---|---|
-| Day totals and the diary card | technical | ⬜ To do |
-| Diary content for a sample day asserted | testing | ⬜ To do |
+| Day totals and the diary card | technical | ✅ Done |
+| Diary content for a sample day asserted | testing | ✅ Done |
 
 </details>
 

@@ -7,12 +7,15 @@ The shared leaderboard behind `/pet join` and `/pet board world` (backlog epic E
 | `POST /v1/join` | `{ githubToken }` → `{ login, apiKey }` | Checks the token with GitHub once, then discards it |
 | `PUT /v1/score` | `{ xp, level, favPet, streak, bestStreak }` | Signed-in; at most once a minute; impossible scores refused |
 | `GET /v1/board?limit=20` | → `{ top, me }` | Public; `me` only when signed in |
-| `DELETE /v1/me` | | Removes the caller's row entirely |
+| `DELETE /v1/me` | | Removes the caller's row and visits entirely |
+| `PUT /v1/me` | `{ visitsOff }` | Signed-in; turns visits off or on |
+| `GET /v1/pet/:login` | → `{ login, level, favPet, wearing, isFirstToday }` | Signed-in; a visit, counted once a day per pair |
+| `GET /card/:login.svg` | a badge | Public; cached 5 minutes; 404 for players not on the board |
 
 Signed-in calls send `Authorization: Bearer <apiKey>`. Only a SHA-256 hash of the key is stored.
 
 ## What it keeps
-GitHub id and login, level, XP, favourite pet, streak and best streak, and when they joined and last scored. Nothing about projects, prompts, code or machines.
+GitHub id and login, level, XP, favourite pet, streak and best streak, what the pet wears and the theme's two colours (for the badge), whether visits are on, who visited whom on which day, and when they joined and last scored. Nothing about projects, prompts, code or machines.
 
 ## Deploy (about 10 minutes)
 
@@ -27,10 +30,11 @@ You need a Cloudflare account (the free plan is plenty) and Node 22.18 or later.
    ```sh
    npm run db:create
    ```
-3. **Create the table:**
+3. **Create the tables:**
    ```sh
    npm run db:migrate
    ```
+   A board created before 1.5.0 needs its upgrade once instead: `npm run db:migrate:e7`.
 4. **Deploy**, and note the URL it prints (`https://claude-pets-board.<you>.workers.dev`):
    ```sh
    npm run deploy

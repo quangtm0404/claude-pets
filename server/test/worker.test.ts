@@ -136,3 +136,70 @@ test('unknown routes and keys', async () => {
   assert.equal((await call('PUT', '/v1/score', { key: 'cp_' + '0'.repeat(64), body: score(1) })).status, 401)
   assert.equal((await call('POST', '/v1/join', { body: {} })).status, 400)
 })
+
+// ── E7: badges and visits ───────────────────────────────────────────────────
+const raw = async (path: string) => {
+  const res = await handle(new Request(`https://board.test${path}`), env, T0)
+  return { status: res.status, type: res.headers.get('content-type') ?? '', cache: res.headers.get('cache-control') ?? '', text: await res.text() }
+}
+const LOOK = { wearing: ['crown', 'shades'], fg: '#ff8800', bg: '#101010' }
+
+test('E7-S01: a joined player has a live badge, drawn in their colours with what their pet wears', async () => {
+  const a = await join('gho_alice')
+  assert.equal((await call('PUT', '/v1/score', { key: a.apiKey, body: { ...score(4463), look: LOOK } })).status, 200)
+  const card = await raw('/card/alice.svg')
+  assert.equal(card.status, 200)
+  assert.match(card.type, /^image\/svg\+xml/)
+  assert.match(card.cache, /max-age=300/)
+  assert.match(card.text, /^<svg [^>]*aria-label="alice's Claude Pet: LV18, 4463 XP"/)
+  assert.ok(card.text.includes('fill="#101010"') && card.text.includes('fill="#FF8800"'), 'the player\'s colours')
+  assert.ok(card.text.includes('#ffd23f'), 'the crown')
+  assert.ok(card.text.includes('LV18 ADULT WHALE · 4,463 XP'))
+  assert.ok(!/<script|on\w+=|href=/i.test(card.text), 'nothing in it runs or links')
+  assert.equal((await raw('/card/ALICE.svg')).status, 200, 'logins match regardless of case')
+})
+
+test('E7-S01: no badge for a stranger, a bad login, or a player who left', async () => {
+  assert.equal((await raw('/card/nobody.svg')).status, 404)
+  assert.equal((await raw('/card/%3Cscript%3E.svg')).status, 404)
+  const a = await join('gho_alice')
+  await call('PUT', '/v1/score', { key: a.apiKey, body: score(100) })
+  await call('DELETE', '/v1/me', { key: a.apiKey })
+  assert.equal((await raw('/card/alice.svg')).status, 404)
+})
+
+test('E7-S01: an invalid look is ignored and the last good one kept', async () => {
+  const a = await join('gho_alice')
+  await call('PUT', '/v1/score', { key: a.apiKey, body: { ...score(100), look: LOOK } })
+  const r = await call('PUT', '/v1/score', { key: a.apiKey, body: { ...score(110), look: { wearing: ['jetpack'], fg: 'red', bg: '#000000' } }, now: T0 + 120_000 })
+  assert.equal(r.status, 200)
+  assert.equal(JSON.parse((db.prepare('SELECT look FROM players').get() as { look: string }).look).fg, '#FF8800')
+})
+
+test('E7-S02: a visit shows the host\'s pet; the first visit a day counts; the host hears about it', async () => {
+  const a = await join('gho_alice'), b = await join('gho_bob')
+  await call('PUT', '/v1/score', { key: a.apiKey, body: { ...score(4463), look: LOOK } })
+  await call('PUT', '/v1/score', { key: b.apiKey, body: score(200, { favPet: 'fox' }) })
+  const v1 = await call('GET', '/v1/pet/alice', { key: b.apiKey })
+  assert.equal(v1.status, 200)
+  assert.deepEqual(v1.body, { login: 'alice', level: 18, favPet: 'whale', wearing: ['crown', 'shades'], isFirstToday: true })
+  assert.equal((await call('GET', '/v1/pet/alice', { key: b.apiKey })).body.isFirstToday, false)
+  const host = await call('PUT', '/v1/score', { key: a.apiKey, body: score(4470), now: T0 + 120_000 })
+  assert.deepEqual(host.body.visitors, [{ login: 'bob', favPet: 'fox' }])
+  const again = await call('PUT', '/v1/score', { key: a.apiKey, body: score(4475), now: T0 + 240_000 })
+  assert.deepEqual(again.body.visitors, [], 'told once')
+  assert.equal((await call('GET', '/v1/pet/alice', { key: b.apiKey, now: T0 + 86_400_000 })).body.isFirstToday, true, 'a new day')
+})
+
+test('E7-S02: visits need a key, a player on the board, someone else, and visits on', async () => {
+  const a = await join('gho_alice'), b = await join('gho_bob')
+  await call('PUT', '/v1/score', { key: a.apiKey, body: score(100) })
+  assert.equal((await call('GET', '/v1/pet/alice')).status, 401)
+  assert.equal((await call('GET', '/v1/pet/carol', { key: b.apiKey })).status, 404)
+  assert.equal((await call('GET', '/v1/pet/alice', { key: a.apiKey })).status, 400)
+  assert.equal((await call('PUT', '/v1/me', { key: a.apiKey, body: { visitsOff: true } })).status, 200)
+  const off = await call('GET', '/v1/pet/alice', { key: b.apiKey })
+  assert.equal(off.status, 403)
+  assert.match(off.body.error, /isn't taking visits/)
+  assert.equal((await call('PUT', '/v1/me', { key: a.apiKey, body: { visitsOff: 'no' } })).status, 400)
+})
