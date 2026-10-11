@@ -55,6 +55,135 @@ const STATUS_TONE: Record<StoryStatus, Tone> = {
 }
 
 // ── Backlog sources: markdown, not an issue tracker ───────────────────────────────────
+// The band's rows by name. Drawn in the order the `bandRows` setting lists them;
+// when space is short they are dropped in DROP_ORDER, first to go first (E1-S03).
+export type BandRow = 'banner' | 'git' | 'usage' | 'weather' | 'story' | 'tests'
+const DEFAULT_ROWS: BandRow[] = ['banner', 'git', 'usage', 'weather', 'story', 'tests']
+const DROP_ORDER: BandRow[] = ['banner', 'git', 'tests', 'story', 'weather', 'usage']
+
+/** The rows a `bandRows` value names, in its order; unknown names ignored, nothing valid means the default. */
+// ── Weather (E2): Open-Meteo, no key; nothing is fetched until a place is set ──
+type TempUnit = 'both' | 'c' | 'f'
+export type WeatherKind = 'clear' | 'cloudy' | 'fog' | 'rain' | 'snow' | 'storm'
+export type WeatherPlace = { name: string; lat: number; lon: number }
+export type Weather = {
+  place: string
+  tempC: number
+  code: number
+  kind: WeatherKind
+  label: string
+  windKmh: number
+  isDay: boolean
+}
+const WINDY_KMH = 30
+const WEATHER_EVERY_MS = 15 * 60_000
+
+/** WMO weather codes, as Open-Meteo reports them, to a kind and a label. */
+export function wmo(code: number): { kind: WeatherKind; label: string } {
+  if (code === 0) return { kind: 'clear', label: 'CLEAR' }
+  if (code <= 2) return { kind: 'cloudy', label: code === 1 ? 'MAINLY CLEAR' : 'PARTLY CLOUDY' }
+  if (code === 3) return { kind: 'cloudy', label: 'OVERCAST' }
+  if (code === 45 || code === 48) return { kind: 'fog', label: 'FOG' }
+  if (code >= 51 && code <= 57) return { kind: 'rain', label: 'DRIZZLE' }
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return { kind: 'rain', label: code >= 80 ? 'SHOWERS' : 'RAIN' }
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { kind: 'snow', label: 'SNOW' }
+  if (code >= 95) return { kind: 'storm', label: 'THUNDERSTORM' }
+  return { kind: 'cloudy', label: 'CLOUDY' }
+}
+
+export const toF = (c: number) => Math.round((c * 9) / 5 + 32)
+export function fmtTemp(c: number, unit: TempUnit): string {
+  const C = `${Math.round(c)}°C`, F = `${toF(c)}°F`
+  return unit === 'c' ? C : unit === 'f' ? F : `${C} / ${F}`
+}
+export const fmtWind = (kmh: number, unit: TempUnit) =>
+  unit === 'f' ? `${Math.round(kmh * 0.621)} MPH` : `${Math.round(kmh)} KM/H`
+
+function weatherIcon(wx: Weather): string {
+  if (wx.kind === 'clear') return wx.isDay ? '☀' : '☾'
+  return { cloudy: '☁', fog: '≋', rain: '☂', snow: '❄', storm: '⚡' }[wx.kind]
+}
+
+function weatherRow(Box: unknown, Text: unknown, C: Palette, wx: Weather | null, unit: TempUnit): RenderChildren {
+  if (!wx) return null
+  const B = Box as never, T = Text as never
+  const tone = wx.kind === 'storm' ? C.fail : wx.kind === 'clear' && wx.isDay ? C.warn : C.info
+  return h(B, { flexDirection: 'row' },
+    h(T, { color: tone, backgroundColor: C.bg, bold: true }, ` ${weatherIcon(wx)} ${fmtTemp(wx.tempC, unit)}`),
+    h(T, { color: C.fg, backgroundColor: C.bg }, ` · ${wx.label}`),
+    h(T, { color: wx.windKmh >= WINDY_KMH ? C.warn : C.dim, backgroundColor: C.bg }, ` · WIND ${fmtWind(wx.windKmh, unit)}`),
+    h(T, { color: C.dim, backgroundColor: C.bg, wrap: 'truncate' }, ` · ${wx.place.toUpperCase()}`),
+  ) as RenderChildren
+}
+
+/** Finds a place by name (Open-Meteo geocoding). */
+async function geocode($: EngineInterface, query: string): Promise<WeatherPlace | null> {
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`
+  const r = await $.http.fetch(url)
+  if (!r.ok) return null
+  const hit = (JSON.parse(r.text) as { results?: { name: string; country?: string; latitude: number; longitude: number }[] }).results?.[0]
+  return hit ? { name: [hit.name, hit.country].filter(Boolean).join(', '), lat: hit.latitude, lon: hit.longitude } : null
+}
+
+/** Where this machine is, by its IP address: only when the person asks (/weather here). */
+async function placeFromIp($: EngineInterface): Promise<WeatherPlace | null> {
+  const r = await $.http.fetch('https://ipapi.co/json/')
+  if (!r.ok) return null
+  const d = JSON.parse(r.text) as { city?: string; country_name?: string; latitude?: number; longitude?: number }
+  return typeof d.latitude === 'number' && typeof d.longitude === 'number'
+    ? { name: [d.city, d.country_name].filter(Boolean).join(', ') || 'HERE', lat: d.latitude, lon: d.longitude }
+    : null
+}
+
+async function readPlace($: EngineInterface): Promise<WeatherPlace | null> {
+  const v = await $.store.get('weatherPlace')
+  const p = v as Partial<WeatherPlace> | undefined
+  return p && typeof p.lat === 'number' && typeof p.lon === 'number' && typeof p.name === 'string' ? (p as WeatherPlace) : null
+}
+
+/** Current conditions for the stored place; a failed fetch keeps the last reading. */
+async function refreshWeather($: EngineInterface) {
+  const place = await readPlace($)
+  if (!place) {
+    if ((await read($, weather)) !== null) await update($, weather, () => null)
+    petSim.wx = null
+    return
+  }
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}`
+      + '&current=temperature_2m,weather_code,wind_speed_10m,is_day&wind_speed_unit=kmh&timezone=auto'
+    const r = await $.http.fetch(url)
+    if (!r.ok) return
+    const cur = (JSON.parse(r.text) as { current?: { temperature_2m: number; weather_code: number; wind_speed_10m: number; is_day: number } }).current
+    if (!cur) return
+    const w = wmo(cur.weather_code)
+    const next: Weather = {
+      place: place.name, tempC: cur.temperature_2m, code: cur.weather_code, kind: w.kind, label: w.label,
+      windKmh: cur.wind_speed_10m, isDay: cur.is_day === 1,
+    }
+    await update($, weather, () => next)
+    petSim.wx = next
+  } catch {
+    // offline or refused: keep what we had
+  }
+}
+
+export function parseRows(value: string): BandRow[] {
+  const rows = value.split(',').map(r => r.trim().toLowerCase())
+    .filter((r): r is BandRow => (DEFAULT_ROWS as string[]).includes(r))
+  return rows.length ? [...new Set(rows)] : [...DEFAULT_ROWS]
+}
+
+/** Which of the present rows fit in `room`, keeping the most important (E1-S03). */
+export function keepRows(present: BandRow[], room: number): Set<BandRow> {
+  const keep = new Set(present)
+  for (const r of DROP_ORDER) {
+    if (keep.size <= Math.max(0, room)) break
+    keep.delete(r)
+  }
+  return keep
+}
+
 // The plugin's settings (`userConfig` in plugin.json, changed from /config).
 const DEFAULT_ID = /\b([A-Z]\d{1,3}-[A-Z]?\d{1,3})\b/i
 const CFG = {
@@ -66,6 +195,13 @@ const CFG = {
   defectCommand: '',
   petName: 'Pixel',
   petKind: 'cat' as PetKind,
+  /** The band's rows, in the order they are drawn (E1-S01). */
+  bandRows: [...DEFAULT_ROWS] as BandRow[],
+  temperatureUnit: 'both' as TempUnit,
+  /** A place to look up at startup when none is stored yet (E2-S01). */
+  weatherPlace: '',
+  /** The name on the pet board (E3-S01); empty means git's user.name, else the OS user. */
+  playerName: '',
 }
 
 export function configure(options: PluginOptions) {
@@ -82,6 +218,11 @@ export function configure(options: PluginOptions) {
   }
   CFG.defectCommand = str('defectCommand')
   if (str('petName')) CFG.petName = str('petName').slice(0, 16)
+  CFG.bandRows = parseRows(str('bandRows'))
+  const unit = str('temperatureUnit').toLowerCase()
+  CFG.temperatureUnit = unit === 'c' || unit === 'f' ? unit : 'both'
+  CFG.weatherPlace = str('weatherPlace')
+  CFG.playerName = str('playerName').slice(0, 32)
   const kind = str('petKind')
   if (isPetKind(kind)) CFG.petKind = kind
 }
@@ -102,6 +243,7 @@ const storyId = atom({ plugin: 'pixel-pets', key: 'storyId' } as const, null)
 const story = atom({ plugin: 'pixel-pets', key: 'story' } as const, null)
 const storyError = atom({ plugin: 'pixel-pets', key: 'storyError' } as const, null)
 const planLabel = atom({ plugin: 'pixel-pets', key: 'planLabel' } as const, null)
+const weather = atom({ plugin: 'pixel-pets', key: 'weather' } as const, null)
 const usage = atom({ plugin: 'pixel-pets', key: 'usage' } as const, { fiveHour: null, week: null, ctxPercent: null, costUsd: null })
 const petState = atom({ plugin: 'pixel-pets', key: 'pet' } as const, { kind: 'cat', name: '' })
 const petLine = atom({ plugin: 'pixel-pets', key: 'petLine' } as const, '')
@@ -644,7 +786,19 @@ const hex = (c: string) => parseInt(c.slice(1), 16)
 
 export type HudSegment = { text: string; color: number }
 
+export type Sky = { kind: WeatherKind; isDay: boolean; windy: boolean; dir: 1 | -1 }
+
+/** A stable pseudo-random number per column, so drops and stars stay put between frames. */
+const hash = (n: number) => {
+  let x = (n * 2654435761) >>> 0
+  x ^= x >>> 15
+  return x % 997
+}
+
 export type PetFrame = {
+  /** The weather behind the pet; drawn first, so nothing of it covers the pet. */
+  sky?: Sky | null
+  tick?: number
   kind: PetKind
   columns: number
   x: number
@@ -674,6 +828,41 @@ export function petCells(f: PetFrame): string {
   const px: (number | null)[] = new Array<number | null>(W * H).fill(null)
   const set = (X: number, Y: number, c: number) => {
     if (X >= 0 && X < W && Y >= 0 && Y < H) px[Y * W + X] = c
+  }
+  if (f.sky) {
+    const t = f.tick ?? 0, sky = f.sky
+    if (sky.kind === 'clear') {
+      if (sky.isDay) {
+        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) set(W - 6 + dx, dy, 0xffd23f)
+      } else {
+        for (const [dx, dy] of [[0, 0], [1, 0], [1, 1]] as const) set(W - 6 + dx, dy, 0xf3f0d0)
+        for (let x = 1; x < W - 8; x++) if (hash(x) % 11 === 0 && (hash(x + t / 16) | 0) % 3) set(x, hash(x * 7) % 2, 0x8f9bd6)
+      }
+    }
+    if (sky.kind !== 'clear' && sky.kind !== 'fog') {
+      const grey = sky.kind === 'storm' ? 0x5c6672 : sky.kind === 'cloudy' ? 0xb8c2cc : 0x8996a3
+      const drift = (sky.windy ? 0.5 : 0.12) * sky.dir
+      for (let c = 0; c < 3; c++) {
+        const span = W + 8
+        const cx = Math.round((((c * span) / 3 + t * drift) % span + span) % span) - 6
+        for (const [dx, dy] of [[1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1]] as const) set(cx + dx, dy, grey)
+      }
+    }
+    if (sky.kind === 'rain' || sky.kind === 'storm' || sky.kind === 'snow') {
+      const isSnow = sky.kind === 'snow'
+      for (let x = 0; x < W; x++) {
+        if (hash(x) % (isSnow ? 7 : 4) !== 0) continue
+        const y = 2 + ((Math.floor(t / (isSnow ? 3 : 1)) + hash(x + 5)) % 2)
+        set(x + (sky.windy ? sky.dir * (y - 2) : 0), y, isSnow ? 0xf0f6ff : 0x5fa8ff)
+      }
+    }
+    if (sky.kind === 'storm' && t % 40 < 2) {
+      const bx = 6 + (hash(Math.floor(t / 40)) % Math.max(1, W - 12))
+      for (const [dx, dy] of [[0, 0], [1, 1], [0, 2], [1, 3]] as const) set(bx + dx, dy, 0xfff36b)
+    }
+    if (sky.kind === 'fog') {
+      for (let x = 0; x < W; x++) if ((x + Math.floor(t / 6)) % 3 === 0) set(x, 1 + (x % 2), 0x6f7a85)
+    }
   }
   for (const cx of f.coins) {
     set(Math.round(cx), H - 2, f.sparkle ? COIN_SHINE : COIN)
@@ -785,6 +974,7 @@ const petSim = {
   limitLabel: '',
   resetText: '',
   mood: 'happy' as Mood,
+  wx: null as Weather | null,
   kids: [] as Kid[],
   kidSerial: 0,
   kidsHome: 0,
@@ -899,11 +1089,12 @@ async function saveXp($: EngineInterface) {
   petSim.savedXp = now
 }
 
-async function gainXp($: EngineInterface, n: number) {
+async function gainXp($: EngineInterface, n: number, why: XpReason = 'other', count = 1) {
   await loadXp($)
   const before = levelOf(petSim.xp)
   petSim.xp += n
   const after = levelOf(petSim.xp)
+  void recordXp($, n, why, count, after)
   if (after > before) {
     const pet = await readPet($)
     petReact('★', 'warn', 3000, await $.clock.now(), true)
@@ -911,6 +1102,136 @@ async function gainXp($: EngineInterface, n: number) {
     void petVoice($)
     await saveXp($)
   }
+}
+
+// ── Profile, pet board, streaks and achievements (E3) ───────────────────────
+export type XpReason = 'coin' | 'bug' | 'helper' | 'green' | 'turn' | 'ball' | 'other'
+export type Profile = {
+  since: string
+  totals: { xp: number; coins: number; bugs: number; helpers: number; green: number; turns: number; balls: number }
+  byKind: Record<string, number>
+  streak: { days: number; best: number; last: string }
+  badges: string[]
+}
+const COUNTER: Partial<Record<XpReason, keyof Profile['totals']>> = {
+  coin: 'coins', bug: 'bugs', helper: 'helpers', green: 'green', turn: 'turns', ball: 'balls',
+}
+
+export const ACHIEVEMENTS: { id: string; title: string; hint: string; earned: (p: Profile, level: number) => boolean }[] = [
+  { id: 'first-coin', title: 'FIRST COIN', hint: 'collect a coin', earned: p => p.totals.coins >= 1 },
+  { id: 'bug-squasher', title: 'BUG SQUASHER', hint: 'squash 10 bugs', earned: p => p.totals.bugs >= 10 },
+  { id: 'pack-leader', title: 'PACK LEADER', hint: 'welcome 10 helpers home', earned: p => p.totals.helpers >= 10 },
+  { id: 'green-streak', title: 'GREEN STREAK', hint: '5 green test runs', earned: p => p.totals.green >= 5 },
+  { id: 'week-streak', title: "A WEEK'S STREAK", hint: 'play 7 days in a row', earned: p => p.streak.days >= 7 },
+  { id: 'lv5', title: 'LEVEL 5', hint: 'reach LV5', earned: (_p, lv) => lv >= 5 },
+  { id: 'lv10', title: 'LEVEL 10', hint: 'reach LV10', earned: (_p, lv) => lv >= 10 },
+  { id: 'zoo-keeper', title: 'ZOO KEEPER', hint: 'raise 5 different animals', earned: p => Object.keys(p.byKind).length >= 5 },
+]
+
+/** A local calendar date, YYYY-MM-DD. */
+export const dayOf = (ms: number) => {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** One day's play updates the streak: the same day does nothing, the next day adds one, a gap starts over. */
+export function nextStreak(st: Profile['streak'], today: string): Profile['streak'] {
+  if (st.last === today) return st
+  const yesterday = dayOf(Date.parse(`${today}T12:00:00`) - 86_400_000)
+  const days = st.last === yesterday ? st.days + 1 : 1
+  return { days, best: Math.max(st.best, days), last: today }
+}
+
+function freshProfile(today: string): Profile {
+  return {
+    since: today,
+    totals: { xp: 0, coins: 0, bugs: 0, helpers: 0, green: 0, turns: 0, balls: 0 },
+    byKind: {},
+    streak: { days: 0, best: 0, last: '' },
+    badges: [],
+  }
+}
+
+/** Reads the profile; the first time, it starts from the XP the current pet already has. */
+async function readProfile($: EngineInterface): Promise<Profile> {
+  const v = await $.store.get('profile')
+  if (v && typeof v === 'object' && 'totals' in (v as object)) return v as Profile
+  await loadXp($)
+  const p = freshProfile(dayOf(await $.clock.now()))
+  const pet = await readPet($)
+  if (petSim.xp > 0) {
+    p.totals.xp = petSim.xp
+    p.byKind[pet.kind] = petSim.xp
+  }
+  return p
+}
+
+/**
+ * Applies one change to the profile as it is in the store right now, so several
+ * open sessions add up rather than overwrite one another (E3-S01).
+ */
+async function bumpProfile($: EngineInterface, change: (p: Profile) => void): Promise<Profile> {
+  const p = await readProfile($)
+  change(p)
+  await $.store.set('profile', p)
+  return p
+}
+
+async function recordXp($: EngineInterface, n: number, why: XpReason, count: number, level: number) {
+  const pet = await readPet($)
+  const today = dayOf(await $.clock.now())
+  const p = await bumpProfile($, prof => {
+    prof.totals.xp += n
+    prof.byKind[pet.kind] = (prof.byKind[pet.kind] ?? 0) + n
+    const counter = COUNTER[why]
+    if (counter) prof.totals[counter] += why === 'coin' || why === 'bug' ? count : 1
+    if (why === 'turn') prof.streak = nextStreak(prof.streak, today)
+  })
+  // achievements unlock once each, with a notice
+  const fresh = ACHIEVEMENTS.filter(a => !p.badges.includes(a.id) && a.earned(p, level))
+  if (fresh.length) {
+    await bumpProfile($, prof => {
+      for (const a of fresh) if (!prof.badges.includes(a.id)) prof.badges.push(a.id)
+    })
+    for (const a of fresh) $.ui.toast(`▶ ACHIEVEMENT: ${a.title}`, { timeoutMs: 7000 })
+    petReact('★', 'warn', 2500, await $.clock.now(), true)
+    void petVoice($)
+  }
+}
+
+/** The player's name: the setting, else git's user.name, else the OS user. */
+async function playerName($: EngineInterface): Promise<string> {
+  if (CFG.playerName) return CFG.playerName
+  try {
+    const g = await $.process.run(['git', 'config', 'user.name'])
+    if (g.exitCode === 0 && g.stdout.trim()) return g.stdout.trim()
+  } catch {
+    // no git
+  }
+  return (await $.env.get('USERNAME')) ?? (await $.env.get('USER')) ?? 'PLAYER'
+}
+
+/** /pet board: the pets you have raised, ranked, and your record under them (E3-S02, E3-S03). */
+export function boardText(p: Profile, name: string, current: { kind: PetKind; name: string }): string {
+  const ranked = Object.entries(p.byKind).sort((a, b) => b[1] - a[1])
+  if (!ranked.some(([k]) => k === current.kind)) ranked.push([current.kind, 0])
+  const rows = ranked.map(([kind, xp], i) => {
+    const isCur = kind === current.kind
+    const who = isCur ? `${current.name} the ${kind}` : kind
+    return ` ${String(i + 1).padStart(2)}. ${isCur ? '★' : ' '} ${PETS[kind as PetKind]?.emoji ?? '?'} ${who.padEnd(24)} LV${String(levelOf(xp)).padEnd(3)} ${String(xp).padStart(6)} XP${isCur ? '  ← now' : ''}`
+  })
+  const t = p.totals
+  const got = ACHIEVEMENTS.filter(a => p.badges.includes(a.id))
+  const locked = ACHIEVEMENTS.filter(a => !p.badges.includes(a.id))
+  return [
+    `PET BOARD · ${name} · playing since ${p.since}`,
+    ...rows,
+    '',
+    `Lifetime: ${t.xp} XP · ${t.coins} coins · ${t.bugs} bugs squashed · ${t.helpers} helpers home · ${t.green} green test runs · ${t.turns} turns`,
+    `Streak: ${p.streak.days} day${p.streak.days === 1 ? '' : 's'} (best ${p.streak.best})`,
+    `Achievements ${got.length}/${ACHIEVEMENTS.length}: ${got.map(a => a.title).join(' · ') || 'none yet'}`,
+    locked.length ? `Still to earn: ${locked.map(a => `${a.title} (${a.hint})`).join(' · ')}` : 'All achievements earned!',
+  ].join('\n')
 }
 
 /** The plan's fuller window drives the mood; a worse mood is announced once, in its voice. */
@@ -996,7 +1317,7 @@ async function petTick($: EngineInterface) {
     if (Math.abs(s.ballX - mouth) < 1.5) {
       s.ballX = null
       petReact('♥', 'fail', 2500, now, true)
-      void gainXp($, 2)
+      void gainXp($, 2, 'ball')
     }
   } else if (s.react) {
     lift = s.react.jump && s.tick % 4 < 2 ? 1 : 0
@@ -1024,6 +1345,13 @@ async function petTick($: EngineInterface) {
     pose = 'sleep'
     bubble = { glyph: s.tick % 16 < 8 ? 'z' : 'Z', color: hex(C.dim) }
     line = `${name} IS NAPPING`
+  } else if (s.wx && (s.wx.kind === 'rain' || s.wx.kind === 'storm')) {
+    // shelters: sits still, glancing up now and then
+    bubble = s.tick % 24 < 4 ? { glyph: '☂', color: hex(C.info) } : null
+    line = `${name} SHELTERS FROM THE ${s.wx.kind === 'storm' ? 'STORM' : 'RAIN'}`
+  } else if (s.wx && s.wx.kind === 'clear' && s.wx.isDay && s.wx.tempC >= 28 && now < s.sitUntil + 20_000) {
+    pose = 'sleep'
+    line = `${name} BASKS IN THE SUN · ${fmtTemp(s.wx.tempC, CFG.temperatureUnit)}`
   } else if (now < s.sitUntil) {
     line = s.mood === 'grumpy' ? `${name} SULKS · ${s.limitLabel}` : `${name} SITS`
     if (s.mood === 'grumpy' && s.tick % 30 < 6) bubble = { glyph: '#', color: hex(C.warn) }
@@ -1033,12 +1361,19 @@ async function petTick($: EngineInterface) {
     pose = walk(s.mood === 'grumpy' ? 4 : 3)
     if (nearestCoin !== undefined) face(nearestCoin)
     line = s.mood === 'grumpy' ? `${name} IS GRUMPY · ${s.limitLabel}` : nearestCoin !== undefined ? `${name} GOES FOR A COIN` : `${name} WANDERS`
+    if (s.wx?.kind === 'snow' && s.mood === 'happy') {
+      speed = 0.55
+      lift = s.tick % 10 < 2 ? 1 : 0
+      line = `${name} PLAYS IN THE SNOW`
+    }
     if (s.mood === 'grumpy' && s.tick % 30 < 6) bubble = { glyph: '#', color: hex(C.warn) }
     if (Math.random() < (s.mood === 'grumpy' ? 0.012 : 0.006)) s.sitUntil = now + 3000 + Math.random() * 4000
     if (nearestCoin === undefined && Math.random() < 0.004) s.dir = s.dir === 1 ? -1 : 1
   }
 
   s.x += speed * s.dir
+  // strong wind pushes the pet along (E2-S04)
+  if (s.wx && s.wx.windKmh >= WINDY_KMH && pose !== 'sleep') s.x += 0.12
   if (s.x <= 0) { s.x = 0; s.dir = 1 }
   if (s.x >= maxX) { s.x = maxX; s.dir = -1 }
 
@@ -1069,16 +1404,18 @@ async function petTick($: EngineInterface) {
     const got = s.coins.length - kept.length
     s.coins = kept
     s.collected += got
-    void gainXp($, got)
+    void gainXp($, got, 'coin', got)
   }
   const alive = s.bugs.filter(b => b.x + 1 < left || b.x > right)
   if (alive.length < s.bugs.length) {
+    const squashed = s.bugs.length - alive.length
     s.bugs = alive
     petReact('*', 'warn', 900, now, true)
-    void gainXp($, 5)
+    void gainXp($, 5 * squashed, 'bug', squashed)
   }
 
   const cells = petCells({
+    sky: s.wx ? { kind: s.wx.kind, isDay: s.wx.isDay, windy: s.wx.windKmh >= WINDY_KMH, dir: 1 } : null, tick: s.tick,
     kind: pet.kind, columns: s.columns, x: s.x, dir: s.dir, pose, mood: s.mood, lift, bubble,
     ballX: s.ballX, coins: s.coins, bugs: s.bugs, sparkle, bg: C.bg, ground: C.dim,
     kids: s.kids.slice(0, KID_MAX_SHOWN).map(k => ({
@@ -1156,7 +1493,7 @@ async function bringHome($: EngineInterface, k: Kid) {
   s.kids = s.kids.filter(x => x !== k)
   s.kidsHome++
   s.kidXp += k.xp
-  await gainXp($, k.xp)
+  await gainXp($, k.xp, 'helper')
   petReact('♥', 'fail', 1800, await $.clock.now(), true)
   $.ui.toast(`▶ HELPER #${k.n} IS HOME${k.label ? ` (${k.label})` : ''} · +${k.xp} XP`, { timeoutMs: 6000 })
 }
@@ -1429,11 +1766,12 @@ const COMMANDS: { name: string; description: string }[] = [
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
-    description: 'An 8-bit pet game in the band: /pet (show/hide) · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
+    description: 'An 8-bit pet game in the band: /pet (show/hide) · /pet board · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
   },
   // not `standup`: other plugins commonly own that name
   { name: 'standup64', description: 'Three-line standup (Done / Next / Blockers) from this session, copied to the clipboard' },
   { name: 'defect', description: 'Draft a bug report for the last failed test run into the prompt' },
+  { name: 'weather', description: 'Local weather in the band: /weather <city> · /weather here (IP lookup) · /weather off · /weather' },
   { name: 'guard', description: 'Claude Pets guardrails: /guard (status) · /guard off · /guard on' },
   { name: 'retro', description: 'Toggle the Claude Pets band · /retro theme ice|phosphor|amber|c64 · /retro sound on|off' },
 ]
@@ -1504,6 +1842,15 @@ export const register: Register = (on, options) => {
       await update($, storyId, () => id)
     }
     void loadStory($, true).then(() => refreshStatus($))
+    void (async () => {
+      // a place named in the settings is looked up once, when none is stored yet
+      if (CFG.weatherPlace && !(await readPlace($))) {
+        const found = await geocode($, CFG.weatherPlace).catch(() => null)
+        if (found) await $.store.set('weatherPlace', found)
+      }
+      await refreshWeather($)
+    })()
+    $.clock.every(WEATHER_EVERY_MS, () => void refreshWeather($))
     void pollUsage($)
     // Re-read between turns so the bars and the reset countdowns stay current.
     $.clock.every(30000, () => void pollUsage($))
@@ -1542,6 +1889,8 @@ export const register: Register = (on, options) => {
       await throwBall($)
     } else if (/^pat$/i.test(args)) {
       await patPet($)
+    } else if (/^(board|leaderboard|profile)$/i.test(args)) {
+      return { text: boardText(await readProfile($), await playerName($), await readPet($)) }
     } else if (/^(stats|status|xp)$/i.test(args)) {
       await loadXp($)
       const pet = await readPet($)
@@ -1564,7 +1913,7 @@ export const register: Register = (on, options) => {
         text: shown ? `${pet.name} the ${pet.kind} joins the band. READY.` : `${pet.name} is resting. /pet brings them back.`,
       }
     } else {
-      return { text: 'Usage: /pet (show/hide) · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
+      return { text: 'Usage: /pet (show/hide) · /pet board · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
     }
     await update($, petShown, () => true)
     const pet = await readPet($)
@@ -1659,6 +2008,35 @@ export const register: Register = (on, options) => {
     return use(picked)
   })
 
+  on('command.run', { command: 'weather' }, async ($, e) => {
+    const args = e.args.trim()
+    if (/^(off|clear|none)$/i.test(args)) {
+      await $.store.set('weatherPlace', null)
+      await refreshWeather($)
+      return { text: 'Weather off: no place is stored, and nothing is fetched.' }
+    }
+    if (!args) {
+      const wx = await read($, weather)
+      const place = await readPlace($)
+      if (!place) return { text: 'No place set. /weather <city> sets one; /weather here looks yours up from your IP address.' }
+      return {
+        text: wx
+          ? `${wx.place}: ${fmtTemp(wx.tempC, CFG.temperatureUnit)}, ${wx.label.toLowerCase()}, wind ${fmtWind(wx.windKmh, CFG.temperatureUnit).toLowerCase()} (Open-Meteo, every 15 minutes).`
+          : `${place.name}: no reading yet.`,
+      }
+    }
+    const isHere = /^here$/i.test(args)
+    const place = isHere ? await placeFromIp($).catch(() => null) : await geocode($, args).catch(() => null)
+    if (!place) return { text: isHere ? 'Could not look up your place from your IP address. Try /weather <city>.' : `No place called "${args}" found.` }
+    await $.store.set('weatherPlace', place)
+    await refreshWeather($)
+    const wx = await read($, weather)
+    return {
+      text: `Weather for ${place.name}${isHere ? ' (from your IP address, via ipapi.co)' : ''}`
+        + (wx ? `: ${fmtTemp(wx.tempC, CFG.temperatureUnit)}, ${wx.label.toLowerCase()}.` : '.'),
+    }
+  })
+
   on('command.run', { command: 'ticket' }, async ($, e) => {
     const args = e.args.trim()
     if (/^(clear|reset|none)$/i.test(args)) {
@@ -1720,7 +2098,7 @@ export const register: Register = (on, options) => {
       await loadStory($).catch(() => undefined)
       void refreshStatus($)
       void refreshGit($)
-      if (!e.isAborted) await gainXp($, 2)
+      if (!e.isAborted) await gainXp($, 2, 'turn')
       if (!e.isAborted && e.durationMs >= DONE_SOUND_AFTER_MS) {
         $.ui.toast(`▶ DONE IN ${fmtDuration(e.durationMs)}. READY.`, { timeoutMs: 6000 })
         void petVoice($)
@@ -1767,7 +2145,7 @@ export const register: Register = (on, options) => {
         if (res.failed) {
           for (let i = 0; i < Math.min(3, res.failed); i++) spawnBug()
         } else {
-          void gainXp($, 10)
+          void gainXp($, 10, 'green')
         }
         if (res.failed) {
           const failure: Failure = { command: res.command, failed: res.failed, names: failingTests(ran.text ?? '') }
@@ -1810,6 +2188,7 @@ export const register: Register = (on, options) => {
     ])
     const g = await read($, git)
     const plan = await read($, planLabel)
+    const wx = await read($, weather)
     const C = THEMES[themeName]
     let strip: RenderChildren = null
     if (withStrip && e.surface === 'terminal') {
@@ -1834,87 +2213,81 @@ export const register: Register = (on, options) => {
     const left = Math.max(0, Math.floor((W - 2 - C.banner.length) / 2))
     const running = entries.filter(l => l.state === 'run').pop()
     const doneTasks = s ? s.tasks.filter(x => x.status === 'LIVE' || x.status === 'DONE').length : 0
-    // Row budget: a short terminal (macOS's 80×24 in fullscreen leaves ~8 rows) keeps the pet
-    // and READY., then the rows that matter most, dropping the rest.
-    let room = e.props.maxRows - 1 - (strip ? PET_ROWS : e.props.isWorking ? 0 : 1)
-    const fits = (wanted = true) => {
-      if (!wanted || room < 1) return false
-      room--
-      return true
+
+    // Each row, or null when it has nothing to show (E1-S02: no plan, no story and
+    // no ticket means no story row at all, rather than a prompt to set one up).
+    const rows: Record<BandRow, RenderChildren> = {
+      banner: (
+        <Box flexDirection="row">
+          <Text color={C.fg} backgroundColor={C.bg} bold>
+            {pad(' '.repeat(left) + C.banner, W - 2 - C.stripes.length * 2)}
+          </Text>
+          {C.stripes.map(c => (
+            <Text color={c} backgroundColor={C.bg}>▐▌</Text>
+          ))}
+        </Box>
+      ),
+      git: g ? (
+        <Box flexDirection="row">
+          <Text color={C.dim} backgroundColor={C.bg}>{' 64K '}</Text>
+          <Text color={C.hi} backgroundColor={C.bg}>{g.worktree.toUpperCase()}</Text>
+          <Text color={C.dim} backgroundColor={C.bg}>{' ⎇ '}</Text>
+          <Text color={C.fg} backgroundColor={C.bg} wrap="truncate">{g.branch.toUpperCase()}</Text>
+          {g.dirty > 0 && <Text color={C.warn} backgroundColor={C.bg}>{` ±${g.dirty}`}</Text>}
+          {g.mismatch && <Text color={C.fail} backgroundColor={C.bg} bold>{` ≠ ${g.mismatch}`}</Text>}
+          <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">{`  ${fmtModel(model)} · ${fmtTokens(tok)} TOK`}</Text>
+        </Box>
+      ) : (
+        <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
+          {` 64K RAM SYSTEM  ${fmtModel(model)}  ${fmtTokens(tok)} TOKENS USED`}
+        </Text>
+      ),
+      usage: usageRow(Box, Text, C, u, now, W >= 90 ? 10 : 6),
+      weather: weatherRow(Box, Text, C, wx, CFG.temperatureUnit),
+      story: s ? (
+        <Box flexDirection="row">
+          <Text color={C.dim} backgroundColor={C.bg}>{' STORY '}</Text>
+          <Text color={C.hi} backgroundColor={C.bg} bold>{s.id}</Text>
+          <Text color={C[STATUS_TONE[s.status]]} backgroundColor={C.bg} bold>{` [${s.status}] `}</Text>
+          <Text color={C.fg} backgroundColor={C.bg} wrap="truncate">{s.title.toUpperCase()}</Text>
+        </Box>
+      ) : t || en ? (
+        <Box flexDirection="row">
+          <Text color={C.dim} backgroundColor={C.bg}>{' TICKET:'}</Text>
+          <Text color={C.hi} backgroundColor={C.bg} bold>{t ?? '----'}</Text>
+          <Text color={C.dim} backgroundColor={C.bg}>{'  ENV:'}</Text>
+          <Text color={en ? C[ENV_TONE[en] ?? 'hi'] : C.dim} backgroundColor={C.bg} bold>{en ?? '---'}</Text>
+        </Box>
+      ) : err && plan ? (
+        <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
+          {` ${err} ISN'T IN ${plan.toUpperCase()} · /story plan TO CHANGE`}
+        </Text>
+      ) : null,
+      tests: s || res ? (
+        <Box flexDirection="row">
+          {s && (
+            <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
+              {` ${s.epic.toUpperCase()}${s.points ? ` · ${s.points} PTS` : ''}${s.tasks.length ? ` · TASKS ${doneTasks}/${s.tasks.length}` : ''}  `}
+            </Text>
+          )}
+          {res && (
+            <Box flexDirection="row">
+              <Text color={C.dim} backgroundColor={C.bg}>{s ? 'TESTS:' : ' TESTS:'}</Text>
+              <Text color={C.pass} backgroundColor={C.bg}>{`${res.passed} PASS `}</Text>
+              <Text color={res.failed ? C.fail : C.dim} backgroundColor={C.bg}>{`${res.failed} FAIL`}</Text>
+            </Box>
+          )}
+        </Box>
+      ) : null,
     }
-    const showStory = fits()
-    const showUsage = fits()
-    const showBanner = fits()
-    const showGit = fits()
-    const showEpic = fits(Boolean(s || res))
+    // Row budget: the pet and READY. first (a short terminal, macOS's 80×24, leaves ~8 rows).
+    const room = e.props.maxRows - 1 - (strip ? PET_ROWS : e.props.isWorking ? 0 : 1)
+    const present = CFG.bandRows.filter(r => rows[r] !== null && rows[r] !== undefined && rows[r] !== false)
+    const kept = keepRows(present, room)
 
     return (
       <Box flexDirection="column" width={W} backgroundColor={C.bg} paddingX={1}>
-        {showBanner && (
-          <Box flexDirection="row">
-            <Text color={C.fg} backgroundColor={C.bg} bold>
-              {pad(' '.repeat(left) + C.banner, W - 2 - C.stripes.length * 2)}
-            </Text>
-            {C.stripes.map(c => (
-              <Text color={c} backgroundColor={C.bg}>▐▌</Text>
-            ))}
-          </Box>
-        )}
-        {!showGit ? null : g ? (
-          <Box flexDirection="row">
-            <Text color={C.dim} backgroundColor={C.bg}>{' 64K '}</Text>
-            <Text color={C.hi} backgroundColor={C.bg}>{g.worktree.toUpperCase()}</Text>
-            <Text color={C.dim} backgroundColor={C.bg}>{' ⎇ '}</Text>
-            <Text color={C.fg} backgroundColor={C.bg} wrap="truncate">{g.branch.toUpperCase()}</Text>
-            {g.dirty > 0 && <Text color={C.warn} backgroundColor={C.bg}>{` ±${g.dirty}`}</Text>}
-            {g.mismatch && <Text color={C.fail} backgroundColor={C.bg} bold>{` ≠ ${g.mismatch}`}</Text>}
-            <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">{`  ${fmtModel(model)} · ${fmtTokens(tok)} TOK`}</Text>
-          </Box>
-        ) : (
-          <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
-            {` 64K RAM SYSTEM  ${fmtModel(model)}  ${fmtTokens(tok)} TOKENS USED`}
-          </Text>
-        )}
-        {showUsage && usageRow(Box, Text, C, u, now, W >= 90 ? 10 : 6)}
-        {!showStory ? null : s ? (
-          <Box flexDirection="row">
-            <Text color={C.dim} backgroundColor={C.bg}>{' STORY '}</Text>
-            <Text color={C.hi} backgroundColor={C.bg} bold>{s.id}</Text>
-            <Text color={C[STATUS_TONE[s.status]]} backgroundColor={C.bg} bold>{` [${s.status}] `}</Text>
-            <Text color={C.fg} backgroundColor={C.bg} wrap="truncate">{s.title.toUpperCase()}</Text>
-          </Box>
-        ) : t || en ? (
-          <Box flexDirection="row">
-            <Text color={C.dim} backgroundColor={C.bg}>{' TICKET:'}</Text>
-            <Text color={C.hi} backgroundColor={C.bg} bold>{t ?? '----'}</Text>
-            <Text color={C.dim} backgroundColor={C.bg}>{'  ENV:'}</Text>
-            <Text color={en ? C[ENV_TONE[en] ?? 'hi'] : C.dim} backgroundColor={C.bg} bold>{en ?? '---'}</Text>
-          </Box>
-        ) : (
-          <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
-            {plan
-              ? err
-                ? ` ${err} ISN'T IN ${plan.toUpperCase()} · /story plan TO CHANGE`
-                : ` PLAN ${plan.toUpperCase()} · /story <ID> TO TRACK A ROW`
-              : ' NO PLAN YET · /story plan TO POINT AT YOURS'}
-          </Text>
-        )}
-        {showEpic && (
-          <Box flexDirection="row">
-            {s && (
-              <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
-                {` ${s.epic.toUpperCase()}${s.points ? ` · ${s.points} PTS` : ''}${s.tasks.length ? ` · TASKS ${doneTasks}/${s.tasks.length}` : ''}  `}
-              </Text>
-            )}
-            {res && (
-              <Box flexDirection="row">
-                <Text color={C.dim} backgroundColor={C.bg}>{s ? 'TESTS:' : ' TESTS:'}</Text>
-                <Text color={C.pass} backgroundColor={C.bg}>{`${res.passed} PASS `}</Text>
-                <Text color={res.failed ? C.fail : C.dim} backgroundColor={C.bg}>{`${res.failed} FAIL`}</Text>
-              </Box>
-            )}
-          </Box>
-        )}
+        {present.filter(r => kept.has(r)).map(r => rows[r])}
         {e.props.isWorking ? (
           <Text color={C.warn} backgroundColor={C.bg} wrap="truncate">
             {` RUN ${running ? `${running.tool.toUpperCase()} ${running.detail}` : ''}`.trimEnd() + '…'}

@@ -1,10 +1,20 @@
 {
   "name": "pixel-pets",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code, with plan usage, your backlog story and branch, pet voices and guardrails",
-  "author": { "name": "quangtm0404" },
+  "author": {
+    "name": "quangtm0404"
+  },
   "license": "MIT",
-  "keywords": ["retro", "statusline", "pet", "dashboard", "usage", "backlog", "guardrails"],
+  "keywords": [
+    "retro",
+    "statusline",
+    "pet",
+    "dashboard",
+    "usage",
+    "backlog",
+    "guardrails"
+  ],
   "types": "./types/index.d.ts",
   "userConfig": {
     "backlogFiles": {
@@ -30,13 +40,57 @@
       "title": "Starting pet",
       "description": "The pet you start with; /pet <animal> switches later",
       "default": "cat",
-      "options": ["cat", "dog", "crab", "shark", "turtle", "mouse", "fox", "orca", "whale", "dolphin", "giraffe", "tiger", "squirrel", "penguin"]
+      "options": [
+        "cat",
+        "dog",
+        "crab",
+        "shark",
+        "turtle",
+        "mouse",
+        "fox",
+        "orca",
+        "whale",
+        "dolphin",
+        "giraffe",
+        "tiger",
+        "squirrel",
+        "penguin"
+      ]
     },
     "petName": {
       "type": "string",
       "title": "Starting pet name",
       "description": "Up to 16 characters; /pet name renames it later",
       "default": "Pixel"
+    },
+    "bandRows": {
+      "type": "string",
+      "title": "Band rows",
+      "description": "Which rows the band shows, in order: banner, git, usage, weather, story, tests. Leave out any you don’t want.",
+      "default": "banner, git, usage, weather, story, tests"
+    },
+    "weatherPlace": {
+      "type": "string",
+      "title": "Weather place",
+      "description": "A city to show the weather for (looked up once); empty means no weather and no requests. /weather sets it too",
+      "default": ""
+    },
+    "temperatureUnit": {
+      "type": "string",
+      "title": "Temperature unit",
+      "description": "°C, °F or both (wind follows: km/h or mph)",
+      "default": "both",
+      "options": [
+        "both",
+        "c",
+        "f"
+      ]
+    },
+    "playerName": {
+      "type": "string",
+      "title": "Player name",
+      "description": "Your name on /pet board; empty means git's user.name, else your OS user",
+      "default": ""
     }
   }
 }

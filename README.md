@@ -60,6 +60,24 @@ A 7×4-pixel pet walks the bottom of the band. It always gets its three rows fir
 
 `/pet name` asks you for a name (or use `/pet name Mochi` directly), `/pet ball` throws a ball, `/pet pat` pats it, `/pet stats` shows progress, and `/pet` on its own hides or shows the pet.
 
+### Rows you choose
+Not a developer? Pick the rows you want with the `bandRows` setting (in `/config`): any of `banner`, `git`, `usage`, `weather`, `story` and `tests`, in the order you list them. The story row only appears when you're tracking something, so nothing asks you to set up a backlog. In a short terminal the pet keeps its place and rows drop in this order: banner, git, tests, story, weather, usage.
+
+### Weather
+```
+ ☀ 28°C / 82°F · CLEAR · WIND 5 KM/H · HANOI, VIETNAM
+```
+`/weather Hanoi` sets your place (or put it in the `weatherPlace` setting), `/weather` shows the current conditions, and `/weather off` forgets the place. `/weather here` looks your place up from your IP address, but only when you ask. The `temperatureUnit` setting picks °C, °F or both, and the wind follows in km/h or mph. Conditions come from [Open-Meteo](https://open-meteo.com) every 15 minutes.
+
+The pet's strip shows the same sky: the sun by day, the moon and stars at night, drifting clouds, rain, snow, fog, and lightning in a storm. The pet shelters from the rain, plays in the snow, basks on a hot, clear day, and gets pushed along by strong wind.
+
+### Your profile and pet board
+`/pet board` ranks every animal you've raised by its own XP, with your lifetime totals (XP, coins, bugs squashed, helpers home, green test runs, turns), your daily streak and your achievements:
+
+`FIRST COIN · BUG SQUASHER · PACK LEADER · GREEN STREAK · A WEEK'S STREAK · LEVEL 5 · LEVEL 10 · ZOO KEEPER`
+
+Your name comes from the `playerName` setting, else git's `user.name`, else your OS user. A shared online leaderboard is proposed in [the backlog](docs/backlog/BACKLOG.md) (E3-S04) but not built: it needs a server, and it would have to be strictly opt-in.
+
 ### Guardrails
 - **Generated files**: Claude's edits to files marked `@generated`, `DO NOT EDIT` or "generated from … regenerate" are refused, pointing back at their source.
 - **Risky commands**: before `terraform apply`/`destroy`, Azure resource changes, force pushes, pushes to `main`/`release`/`prod`, `kubectl`/`helm` changes, or anything hitting a PROD URL, you're asked: **Run it / Allow for this session / Block it**.
@@ -83,6 +101,10 @@ Change them in `/config` under pixel-pets, or in `settings.json` under `pluginCo
 | `defectCommand` | *(empty)* | What `/defect` starts with, e.g. `/report-defect` |
 | `petKind` | `cat` | Starting pet |
 | `petName` | `Pixel` | Starting name |
+| `bandRows` | `banner, git, usage, weather, story, tests` | Which rows the band shows, in order |
+| `weatherPlace` | *(empty)* | A city for the weather; empty means no weather and no requests |
+| `temperatureUnit` | `both` | `c`, `f` or `both` |
+| `playerName` | *(empty)* | Your name on `/pet board` |
 
 ### Backlog formats
 Claude Pets understands two markdown shapes; the first match wins.
@@ -141,7 +163,11 @@ Claude Pets runs wherever Claude Code's terminal does: **Windows, macOS and Linu
 The pixel strip needs a terminal with 24-bit colour and Unicode block characters, which covers Windows Terminal, iTerm2, Terminal.app, GNOME Terminal, Konsole, kitty and WezTerm. In the desktop app the pet shows as an emoji line instead.
 
 ## Privacy
-Everything stays local: the backlog files, git and the transcript are read on your machine, and state is kept in Claude Code's own plugin storage. The one exception is `/standup64`, which sends the session's facts and its last few messages to a Haiku model through your own Claude Code session.
+Everything stays local: the backlog files, git and the transcript are read on your machine, and state (your pet, profile and place) is kept in Claude Code's own plugin storage. The exceptions, each only when you use it:
+
+- **Weather**: once you set a place, its name goes to Open-Meteo's geocoding once, and its coordinates go to Open-Meteo's forecast every 15 minutes. With no place set, nothing is sent.
+- **`/weather here`**: your IP address goes to ipapi.co to find your place, only when you run it.
+- **`/standup64`**: the session's facts and its last few messages go to a Haiku model through your own Claude Code session.
 
 ## Development
 ```sh

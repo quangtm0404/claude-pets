@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 — 2026-10-11
+
+For everyone, not just developers ([backlog](docs/backlog/BACKLOG.md): E1–E3).
+
+- **Rows you choose** (E1): the `bandRows` setting picks the band's rows and their order. The story row only shows when something is tracked, so non-developers never see backlog prompts. Short terminals drop rows by importance and keep the pet.
+- **Weather** (E2): `/weather <city>`, `/weather here` (opt-in IP lookup) and `/weather off`; °C, °F or both. The sky in the pet's strip matches the weather (sun, moon and stars, clouds, rain, snow, fog, storm, wind), and the pet reacts to it. Nothing is fetched until a place is set.
+- **Profile and pet board** (E3): lifetime totals, XP per animal, `/pet board`, daily streaks and eight achievements. A shared online leaderboard is proposed (E3-S04), not built.
+
 ## 1.1.1 — 2026-10-11
 
 - **The pet shows in short terminals**: it used to need about 9 free rows, so in macOS's default 80×24 Terminal it only appeared in fullscreen. The pet and `READY.` now get room first and the info rows (story, usage, banner, branch, epic and tests) drop out one by one as space runs short.

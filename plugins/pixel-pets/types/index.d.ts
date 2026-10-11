@@ -55,6 +55,16 @@ export type GitInfo = { worktree: string; branch: string; dirty: number; mismatc
 /** The last test run that failed, kept for /defect. */
 export type Failure = { command: string; failed: number; names: string[] }
 
+export type WeatherNow = {
+  place: string
+  tempC: number
+  code: number
+  kind: 'clear' | 'cloudy' | 'fog' | 'rain' | 'snow' | 'storm'
+  label: string
+  windKmh: number
+  isDay: boolean
+}
+
 export type PetKind =
   | 'cat' | 'dog' | 'crab' | 'shark' | 'turtle' | 'mouse' | 'fox'
   | 'orca' | 'whale' | 'dolphin' | 'giraffe' | 'tiger' | 'squirrel' | 'penguin'
@@ -78,6 +88,8 @@ declare module 'claude-code' {
       storyError: string | null
       /** The plan file's name, or null when this project has none. */
       planLabel: string | null
+      /** The current conditions at the stored place, or null when none is set. */
+      weather: WeatherNow | null
       usage: Usage
       pet: Pet
       petLine: string

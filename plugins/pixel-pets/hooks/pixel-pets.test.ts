@@ -480,14 +480,15 @@ function repo(on: On, files: Record<string, string>, dirs: Record<string, { name
   return store
 }
 
-test('no plan is not an error: the band says how to set one', async ($, on) => {
+test('E1-S02: no plan is not an error, and the band asks nothing; /story explains when asked', async ($, on) => {
   repo(on, {})
   const ran = await $.command.run(run('story', 'E12-S03'))
   expect(ran.text).toContain('No plan found for this project')
   expect(ran.text).toContain('/story plan')
   const ui = await $.ui.mount(tallBand('terminal') as never)
-  expect(await ui.find({ text: /NO PLAN YET · \/story plan TO POINT AT YOURS/ })).toBeDefined()
+  expect(await ui.find({ text: /PLAN/ })).toBeUndefined()
   expect(await ui.find({ text: /ERROR/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -554,4 +555,116 @@ test('a tiny band (3 rows) leaves the pet out rather than squash it', async ($, 
   const ui = await $.ui.mount({ plugin: 'pixel-pets', surface: 'terminal', ...tiny, props: { ...tiny.props, maxRows: 3 } } as never)
   expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeUndefined()
   await ui.unmount()
+})
+
+// ── E1: a band you choose ────────────────────────────────────────────────────
+test('E1-S01: bandRows picks the rows and their order', { options: { bandRows: 'usage, banner' } } as never, async ($, on) => {
+  engine(on, '')
+  const ui = await $.ui.mount(tallBand('terminal') as never)
+  expect(await ui.find({ text: /CLAUDE PETS/ })).toBeDefined()
+  expect(await ui.find({ text: /PLAN USAGE/ })).toBeDefined()
+  expect(await ui.find({ text: /64K/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+// ── E2: weather ──────────────────────────────────────────────────────────────
+const GEO = { results: [{ name: 'Hanoi', country: 'Vietnam', latitude: 21.0245, longitude: 105.84117 }] }
+const NOW = (code: number, temp: number, wind = 4.7, isDay = 1) =>
+  ({ current: { temperature_2m: temp, weather_code: code, wind_speed_10m: wind, is_day: isDay } })
+
+function weatherApi(on: On, current: unknown) {
+  const urls: string[] = []
+  on('http.fetch', (_$, e) => {
+    const url = (e as { url: string }).url
+    urls.push(url)
+    const body = url.includes('geocoding-api') ? GEO : url.includes('api.open-meteo.com') ? current : {}
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(body) } } as never
+  })
+  return urls
+}
+
+test('E2-S01: no place set means no request at all', async ($, on) => {
+  repo(on, {})
+  const urls = weatherApi(on, NOW(0, 27.8))
+  const ran = await $.command.run(run('weather', ''))
+  expect(ran.text).toContain('No place set')
+  expect(urls.length).toBe(0)
+})
+
+test('E2-S01/S02: /weather <city> finds it, shows °C and °F, and /weather off forgets it', async ($, on) => {
+  const store = repo(on, {})
+  weatherApi(on, NOW(0, 27.8))
+  const ran = await $.command.run(run('weather', 'Hanoi'))
+  expect(ran.text).toBe('Weather for Hanoi, Vietnam: 28°C / 82°F, clear.')
+  expect(store.weatherPlace).toEqual({ name: 'Hanoi, Vietnam', lat: 21.0245, lon: 105.84117 })
+  const ui = await $.ui.mount(tallBand('terminal') as never)
+  expect(await ui.find({ text: ' ☀ 28°C / 82°F' })).toBeDefined()
+  expect(await ui.find({ text: ' · HANOI, VIETNAM' })).toBeDefined()
+  await ui.unmount()
+  const off = await $.command.run(run('weather', 'off'))
+  expect(off.text).toContain('Weather off')
+  const gone = await $.ui.mount(tallBand('terminal') as never)
+  expect(await gone.find({ text: /°C/ })).toBeUndefined()
+  await gone.unmount()
+})
+
+test('E2-S02: temperatureUnit f shows °F and mph only', { options: { temperatureUnit: 'f' } } as never, async ($, on) => {
+  repo(on, {})
+  weatherApi(on, NOW(61, 10, 40))
+  await $.command.run(run('weather', 'Hanoi'))
+  const ui = await $.ui.mount(tallBand('terminal') as never)
+  expect(await ui.find({ text: ' ☂ 50°F' })).toBeDefined()
+  expect(await ui.find({ text: ' · WIND 25 MPH' })).toBeDefined()
+  expect(await ui.find({ text: /°C/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('E2-S03: every sky draws under the pet without error', async ($, on) => {
+  repo(on, {})
+  for (const [code, isDay] of [[0, 1], [0, 0], [3, 1], [45, 1], [61, 1], [73, 1], [95, 1]] as const) {
+    weatherApi(on, NOW(code, 12, 35, isDay))
+    await $.command.run(run('weather', 'Hanoi'))
+    const ui = await $.ui.mount(tallBand('terminal') as never)
+    expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+// ── E3: profile, board, streaks, achievements ────────────────────────────────
+test('E3-S01/S02/S03: turns build the profile, the board ranks the pet, and the streak starts', async ($, on) => {
+  repo(on, {})
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  for (const id of ['t-1', 't-2', 't-3']) {
+    await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: id, reason: 'answer' } as never)
+  }
+  const board = await $.command.run(run('pet', 'board'))
+  expect(board.text).toContain('PET BOARD · ')
+  expect(board.text).toMatch(/1\. ★ 🐈 Pixel the cat\s+LV1\s+6 XP {2}← now/)
+  expect(board.text).toContain('Lifetime: 6 XP · 0 coins · 0 bugs squashed · 0 helpers home · 0 green test runs · 3 turns')
+  expect(board.text).toContain('Streak: 1 day (best 1)')
+  expect(board.text).toContain('Achievements 0/8: none yet')
+})
+
+test('E3-S03: five green test runs unlock GREEN STREAK, once', async ($, on) => {
+  repo(on, {})
+  const toasts: string[] = []
+  on('ui.toast', (_$, e) => (toasts.push(e.text), { value: undefined }))
+  on('tool.call', () => ({ result: {}, text: '  12 passed (3s)' }) as never)
+  for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: 'npx playwright test' } as never)
+  expect(toasts.filter(t => t === '▶ ACHIEVEMENT: GREEN STREAK').length).toBe(1)
+  const board = await $.command.run(run('pet', 'board'))
+  expect(board.text).toContain('6 green test runs')
+  expect(board.text).toContain('Achievements 1/8: GREEN STREAK')
+})
+
+test('E3-S02: each animal keeps its own XP on the board', async ($, on) => {
+  repo(on, {})
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 'a', reason: 'answer' } as never)
+  await $.command.run(run('pet', 'whale'))
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 'b', reason: 'answer' } as never)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 'c', reason: 'answer' } as never)
+  const board = await $.command.run(run('pet', 'board'))
+  expect(board.text).toMatch(/1\. ★ 🐳 Pixel the whale\s+LV1\s+4 XP {2}← now/)
+  expect(board.text).toMatch(/2\. {3}🐈 cat\s+LV1\s+2 XP/)
 })
