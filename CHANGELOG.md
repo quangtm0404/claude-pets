@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0 — 2026-10-11
+
+Everywhere, in your colours ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E5).
+
+- **The pixel pet in the desktop app** (E5-S01): the band draws the same pet, sky, coins, bugs and helpers as SVG, instead of an emoji line.
+- **A pet pane for VS Code** (E5-S02): VS Code has no band, so the pet gets its own pane there, with its HUD, usage, weather and BALL/PAT buttons. It opens by itself when the pet is shown; `/pet pane` opens it on any surface.
+- **Your own colours** (E5-S03): four more presets (`mint`, `rose`, `mono`, `paper` for light terminals), and any accent with `/retro theme #FF8800`, or accent and background with `/retro theme #FF8800 on #101010`. The new `theme` setting sets the starting theme.
+- **Banner fonts** (E5-S04): `/retro font bold|mono|double|wide|pixel`, and a `font` setting. `pixel` draws big pixel letters when the band has room. The terminal's own font stays the terminal's setting; the README says where to change it.
+
 ## 1.2.1 — 2026-10-11
 
 - **The world board is live.** It's at `claude-pets-board.claude-pets-leaderboard.workers.dev`, with its GitHub sign-in app built in as the default, so `/pet join` works straight after install. It's still opt-in: nothing is sent until you join, `/pet leave` deletes your entry, and emptying the `leaderboardUrl` setting turns it off.

@@ -13,7 +13,10 @@ export type LogLine = {
   state: 'run' | 'ok' | 'err'
 }
 
-export type ThemeName = 'ice' | 'phosphor' | 'amber' | 'c64'
+export type ThemeName = 'ice' | 'phosphor' | 'amber' | 'c64' | 'mint' | 'rose' | 'mono' | 'paper'
+
+/** A banner letter style: plain text, Unicode letter styles, or big pixel letters. */
+export type FontName = 'plain' | 'bold' | 'mono' | 'double' | 'wide' | 'pixel'
 
 /** LIVE/DONE, DARK (built, not enabled), PARTIAL, TODO, BLOCKED, PROPOSED, or UNKNOWN. */
 export type StoryStatus = 'LIVE' | 'DONE' | 'DARK' | 'PARTIAL' | 'TODO' | 'BLOCKED' | 'PROPOSED' | 'UNKNOWN'
@@ -81,7 +84,11 @@ declare module 'claude-code' {
       log: LogLine[]
       isBandHidden: boolean
       blink: boolean
-      theme: ThemeName
+      /** A preset's name, `#RRGGBB` (an accent) or `#RRGGBB on #RRGGBB`; empty means the settings' theme. */
+      theme: string
+      font: FontName
+      /** The pet's latest frame as SVG markup, for surfaces without a pixel grid. */
+      petArt: string
       storyId: string | null
       story: Story | null
       /** The tracked id the plan doesn't have (shown as a hint, not an error). */

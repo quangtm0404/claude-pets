@@ -57,6 +57,7 @@ function engine(on: On, md: string, now = Date.parse('2026-10-05T09:00:00Z')) {
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
+  on('ui.close', () => ({ value: undefined }))
 }
 
 test('band shows the banner and READY.', async ($, on) => {
@@ -168,7 +169,9 @@ test('the pet walks in a strip at the bottom of the band, not in a pane', async 
   await term.unmount()
 
   const desk = await $.ui.mount(tallBand('desktop') as never)
-  expect(await desk.find({ text: /🐈 PIXEL/ })).toBeDefined()
+  const art = await desk.find({ type: 'Svg' })
+  expect(String(art?.props.alt)).toMatch(/🐈 PIXEL/)
+  expect(String(art?.props.source)).toMatch(/^<svg [^>]*shape-rendering="crispEdges"/)
   await desk.unmount()
 })
 
@@ -359,7 +362,7 @@ test('settings: a custom id pattern and backlog file are honoured', { options: {
 test('settings: the starting pet comes from petKind and petName', { options: { petKind: 'penguin', petName: 'Pingu' } } as never, async ($, on) => {
   engine(on, '')
   const desk = await $.ui.mount(tallBand('desktop') as never)
-  expect(await desk.find({ text: /🐧 PINGU/ })).toBeDefined()
+  expect(String((await desk.find({ type: 'Svg' }))?.props.alt)).toMatch(/🐧 PINGU/)
   await desk.unmount()
 })
 
@@ -744,4 +747,97 @@ test('1.2.1: the public board is the default, so /pet join works straight after 
   const ran = await $.command.run(run('pet', 'join'))
   expect(ran.text).toContain('Open https://github.com/login/device and enter:')
   expect(calls[0]?.body).toBe('client_id=Ov23liHlgyFS3sCQIQ3l&scope=')
+})
+
+// ── E5: everywhere, in your colours ─────────────────────────────────────────
+const petPane = (surface: 'terminal' | 'desktop' | 'vscode' | 'mobile') => ({
+  plugin: 'pixel-pets', surface, component: 'Pane' as const, requestId: 'pet',
+  props: { bodyColumns: 60 },
+})
+
+test('E5-S01: the desktop band draws the pixel pet as SVG, with the HUD on its ground', async ($, on) => {
+  engine(on, '')
+  await $.command.run(run('pet', 'whale'))
+  const desk = await $.ui.mount(tallBand('desktop') as never)
+  const art = await desk.find({ type: 'Svg' })
+  const svg = String(art?.props.source)
+  expect(svg).toContain('<rect')
+  expect(svg).toContain('#3a6fd0') // the whale's blue
+  expect(svg).toContain('LV1')
+  expect(svg.length).toBeLessThan(131072)
+  expect(await desk.find({ type: 'Raster' })).toBeUndefined()
+  await desk.unmount()
+})
+
+test('E5-S02: VS Code gets a pet pane: opened by /pet pane, drawn as SVG with buttons', async ($, on) => {
+  engine(on, '')
+  const opened: string[] = []
+  on('ui.open', (_$, e) => (opened.push(e.id), { value: { isPlaced: true } }) as never)
+  const ran = await $.command.run(run('pet', 'pane'))
+  expect(ran.text).toBe('The pet pane is open. READY.')
+  expect(opened).toContain('pet')
+  for (const surface of ['vscode', 'desktop', 'mobile'] as const) {
+    const pane = await $.ui.mount(petPane(surface) as never)
+    expect(String((await pane.find({ type: 'Svg' }))?.props.alt)).toMatch(/PIXEL/)
+    expect(await pane.find({ type: 'Button', key: 'ball' })).toBeDefined()
+    await pane.unmount()
+  }
+  const term = await $.ui.mount(petPane('terminal') as never)
+  expect(await term.find({ text: /LIVES IN THE BAND/ })).toBeDefined()
+  await term.unmount()
+})
+
+test('E5-S02: in a VS Code session, /pet shows the pet by opening its pane', async ($, on) => {
+  engine(on, '')
+  on('session.surfaces', () => ({ value: ['vscode'] }) as never)
+  const opened: string[] = []
+  on('ui.open', (_$, e) => (opened.push(e.id), { value: { isPlaced: true } }) as never)
+  await $.command.run(run('pet', '')) // hides
+  await $.command.run(run('pet', '')) // shows again
+  expect(opened).toContain('pet')
+})
+
+test('E5-S03: /retro theme takes presets and your own colours; a bad colour shows help', async ($, on) => {
+  engine(on, '')
+  const list = await $.command.run(run('retro', 'theme'))
+  expect(list.text).toContain('paper')
+  expect(list.text).toContain('#FF8800 on #101010')
+  const own = await $.command.run(run('retro', 'theme #f80 on #101010'))
+  expect(own.text).toBe('Theme: your own colours, #FF8800 ON #101010. READY.')
+  const ui = await $.ui.mount({ plugin: 'pixel-pets', surface: 'terminal', ...band(80) } as never)
+  const banner = await ui.find({ type: 'Text', text: /CLAUDE PETS \*/ })
+  expect(banner?.props.color).toBe('#FF8800')
+  expect(banner?.props.backgroundColor).toBe('#101010')
+  await ui.unmount()
+  const bad = await $.command.run(run('retro', 'theme #12345z'))
+  expect(bad.text).toContain('Presets:')
+  const preset = await $.command.run(run('retro', 'theme rose'))
+  expect(preset.text).toBe('Theme: ROSE. READY.')
+})
+
+test('E5-S03: the theme setting colours the band from the start', { options: { theme: '#FF8800' } } as never, async ($, on) => {
+  engine(on, '')
+  const ui = await $.ui.mount({ plugin: 'pixel-pets', surface: 'terminal', ...band(80) } as never)
+  expect((await ui.find({ type: 'Text', text: /CLAUDE PETS \*/ }))?.props.color).toBe('#FF8800')
+  await ui.unmount()
+})
+
+test('E5-S04: /retro font restyles the banner; pixel draws big letters where there is room', async ($, on) => {
+  engine(on, '')
+  const ran = await $.command.run(run('retro', 'font bold'))
+  expect(ran.text).toBe('Banner font: 𝗕𝗢𝗟𝗗. READY.')
+  const ui = await $.ui.mount({ plugin: 'pixel-pets', surface: 'terminal', ...band(80) } as never)
+  expect(await ui.find({ text: /𝗖𝗟𝗔𝗨𝗗𝗘 𝗣𝗘𝗧𝗦/ })).toBeDefined()
+  await ui.unmount()
+
+  await $.command.run(run('retro', 'font pixel'))
+  const term = await $.ui.mount(tallBand('terminal') as never)
+  expect(await term.find({ type: 'Raster', key: 'title' })).toBeDefined()
+  await term.unmount()
+  const desk = await $.ui.mount(tallBand('desktop') as never)
+  expect(String((await desk.find({ type: 'Svg' }))?.props.alt)).toBe('CLAUDE PETS')
+  await desk.unmount()
+
+  const help = await $.command.run(run('retro', 'font comic'))
+  expect(help.text).toContain("The terminal's own font is its setting")
 })

@@ -286,3 +286,75 @@ So that the board can go live under my Cloudflare account.
 | Deploy to the owner's account | deployment | ✅ Done (live 2026-10-11) |
 
 </details>
+
+## P3 · Everywhere, in your colours - ✅ Done
+
+### E5 · Pets everywhere - ✅ Done
+
+**Outcome.** Claude Pets looks like itself in the terminal, the desktop app and VS Code, in colours and letters the person picks.
+
+<details><summary><b>E5-S01</b> - as a <b>desktop app user</b>, I want <b>to see the pixel pet in the band, not an emoji line</b> · ✅ Done · 3 pts</summary>
+
+So that the desktop app shows the same game as the terminal.
+
+**Acceptance criteria**
+- The band draws the pet, its sky, coins, bugs and helpers as SVG where there is no pixel grid
+- The HUD (hearts, level, XP, coins, what the pet is doing) is drawn on its ground
+- It animates by redrawing at most about twice a second, and only when the frame changed
+- The terminal keeps its cell-drawn strip
+
+| Task | Kind | Status |
+|---|---|---|
+| One frame drawn as pixels, then as cells or SVG | technical | ✅ Done |
+| Desktop band and SVG size asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E5-S02</b> - as a <b>VS Code user</b>, I want <b>to see my pet even though VS Code draws no band</b> · ✅ Done · 3 pts</summary>
+
+So that the pet lives where I work.
+
+**Acceptance criteria**
+- A pet pane shows the pet, its HUD line, usage, weather and BALL, PAT and CLOSE buttons
+- In VS Code it opens by itself when the pet is shown, and closes when the pet is hidden
+- `/pet pane` opens it on any surface; in the terminal it points back at the band
+
+| Task | Kind | Status |
+|---|---|---|
+| Pet pane, VS Code attach and /pet pane | technical | ✅ Done |
+| Pane on vscode, desktop, mobile and terminal asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E5-S03</b> - as a <b>user</b>, I want <b>to colour the band myself instead of picking one fixed theme</b> · ✅ Done · 3 pts</summary>
+
+So that it fits my terminal and my taste.
+
+**Acceptance criteria**
+- Presets: ice, phosphor, amber, c64, mint, rose, mono and paper (for light backgrounds)
+- `/retro theme #FF8800` takes an accent and mixes a background from it; `/retro theme #FF8800 on #101010` takes both
+- The other colours are mixed from those two, so text stays readable on dark and light backgrounds
+- A `theme` setting sets the starting theme; a bad colour shows the help instead
+
+| Task | Kind | Status |
+|---|---|---|
+| Palette mixed from accent and background | technical | ✅ Done |
+| Presets, own colours, the setting and bad input asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E5-S04</b> - as a <b>user</b>, I want <b>to change the font</b> · ✅ Done · 2 pts</summary>
+
+So that the banner looks the way I like.
+
+**Acceptance criteria**
+- `/retro font` offers plain, bold, mono, double, wide and pixel, and a `font` setting picks the start
+- pixel draws big pixel letters in cells or SVG when the band has room, else the plain banner
+- The help explains that the terminal's own font is the terminal's setting, and where to change it
+
+| Task | Kind | Status |
+|---|---|---|
+| Unicode letter styles and a 3×5 pixel font | technical | ✅ Done |
+| Each style and the pixel banner asserted | testing | ✅ Done |
+
+</details>

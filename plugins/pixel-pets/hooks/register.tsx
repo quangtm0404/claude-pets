@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { PluginOptions, RenderChildren, SessionUsage } from 'claude-code'
 
 import type {
-  Failure, GitInfo, LogLine, PetKind, Story, StoryStatus, StoryTask, TestRun, ThemeName, Usage, UsageWindow,
+  Failure, FontName, GitInfo, LogLine, PetKind, Story, StoryStatus, StoryTask, TestRun, ThemeName, Usage, UsageWindow,
 } from '../types'
 
 // ── Themes ──────────────────────────────────────────────────────────────────
@@ -46,6 +46,152 @@ const THEMES: Record<ThemeName, Palette> = {
     stripes: ['#883932', '#8B5429', '#BFCE72', '#55A049', '#67B6BD'],
     banner: '**** CLAUDE PETS · C64 ****',
   },
+  // Mint on charcoal, softer than phosphor.
+  mint: {
+    bg: '#0E1715', fg: '#7FFFD4', dim: '#3C8C78', hi: '#E0FFF6',
+    pass: '#A6F28C', fail: '#FF7A7A', warn: '#FFD97A', info: '#8CC8FF',
+    stripes: ['#143A31', '#1F6655', '#33A387', '#7FFFD4', '#E0FFF6'],
+    banner: '**** CLAUDE PETS · MINT ****',
+  },
+  // Rose on deep wine.
+  rose: {
+    bg: '#1A0D12', fg: '#FF8FB1', dim: '#A34D6B', hi: '#FFE0EA',
+    pass: '#9BE58C', fail: '#FF5A5A', warn: '#FFD166', info: '#7FD0FF',
+    stripes: ['#3D1724', '#6E2840', '#B8496E', '#FF8FB1', '#FFE0EA'],
+    banner: '**** CLAUDE PETS · ROSE ****',
+  },
+  // Plain white on black, no tint.
+  mono: {
+    bg: '#000000', fg: '#E6E6E6', dim: '#7A7A7A', hi: '#FFFFFF',
+    pass: '#8FE388', fail: '#FF6B6B', warn: '#FFD166', info: '#8CC8FF',
+    stripes: ['#262626', '#4D4D4D', '#808080', '#B3B3B3', '#FFFFFF'],
+    banner: '**** CLAUDE PETS · MONO ****',
+  },
+  // Dark ink on cream, for light terminals and editors.
+  paper: {
+    bg: '#F7F1E3', fg: '#1F3A5F', dim: '#8A8270', hi: '#0B1A2E',
+    pass: '#2E7D32', fail: '#C62828', warn: '#B26A00', info: '#1565C0',
+    stripes: ['#E3D9C0', '#C9B994', '#8A8270', '#1F3A5F', '#0B1A2E'],
+    banner: '**** CLAUDE PETS · PAPER ****',
+  },
+}
+export const THEME_NAMES = Object.keys(THEMES) as ThemeName[]
+
+// ── Your own colours (E5-S03) ────────────────────────────────────────────────
+// A theme is a preset's name or one accent colour, optionally on a background of
+// your own: `#FF8800` or `#FF8800 on #101010`. The rest of the palette is mixed
+// from those two, so any pair stays readable.
+const HEX_RE = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i
+export function normHex(s: string): string | null {
+  const m = HEX_RE.exec(s.trim())?.[1]
+  if (!m) return null
+  const six = m.length === 3 ? [...m].map(c => c + c).join('') : m
+  return `#${six.toUpperCase()}`
+}
+const rgb = (c: string) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)) as [number, number, number]
+const toHex = (r: number[]) => `#${r.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('').toUpperCase()}`
+/** `a` moved toward `b` by `t` (0..1). */
+export const mix = (a: string, b: string, t: number) => {
+  const x = rgb(a), y = rgb(b)
+  return toHex(x.map((v, i) => v + ((y[i] ?? 0) - v) * t))
+}
+const luma = (c: string) => {
+  const [r, g, b] = rgb(c)
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+}
+
+/** A theme spec read leniently: a preset name, `#accent` or `#accent on #background`; null when neither. */
+export function parseTheme(spec: string): string | null {
+  const s = spec.trim().toLowerCase()
+  if (isThemeName(s)) return s
+  const m = /^(#?[0-9a-f]{3,6})(?:\s+(?:on\s+)?(#?[0-9a-f]{3,6}))?$/i.exec(s)
+  if (!m) return null
+  const accent = normHex(m[1] ?? '')
+  const back = m[2] ? normHex(m[2]) : null
+  if (!accent || (m[2] && !back)) return null
+  return back ? `${accent} on ${back}` : accent
+}
+
+const paletteCache = new Map<string, Palette>()
+/** The palette for a theme spec; none (or an unknown one) means the settings' theme. */
+export function paletteOf(spec: string): Palette {
+  const key = parseTheme(spec) ?? CFG.theme
+  if (isThemeName(key)) return THEMES[key]
+  const hit = paletteCache.get(key)
+  if (hit) return hit
+  const [a, b] = key.split(' on ')
+  const fg = a ?? '#5FE1FF'
+  const isLightAccent = luma(fg) > 0.5
+  // no background given: a deep shade of the accent itself (or near-white for a dark accent)
+  const bg = b ?? (isLightAccent ? mix(fg, '#000000', 0.9) : mix(fg, '#FFFFFF', 0.92))
+  const isLight = luma(bg) > 0.5
+  const ink = isLight ? '#000000' : '#FFFFFF'
+  const p: Palette = {
+    bg, fg,
+    dim: mix(bg, fg, 0.55),
+    hi: mix(fg, ink, 0.7),
+    pass: isLight ? '#2E7D32' : '#7CF29A',
+    fail: isLight ? '#C62828' : '#FF6B6B',
+    warn: isLight ? '#B26A00' : '#FFD166',
+    info: isLight ? '#1565C0' : '#8CC8FF',
+    stripes: [mix(bg, fg, 0.2), mix(bg, fg, 0.45), mix(bg, fg, 0.7), fg, mix(fg, ink, 0.7)],
+    banner: '**** CLAUDE PETS ****',
+  }
+  paletteCache.set(key, p)
+  return p
+}
+
+// ── Banner fonts (E5-S04) ────────────────────────────────────────────────────
+// A plugin can't change the terminal's own font (that is the terminal's setting),
+// but the banner can be set in Unicode letter styles every font carries, or drawn
+// as big pixel letters.
+export const FONT_NAMES: FontName[] = ['plain', 'bold', 'mono', 'double', 'wide', 'pixel']
+export const isFontName = (x: unknown): x is FontName => typeof x === 'string' && (FONT_NAMES as string[]).includes(x)
+const STYLE_BASE: Record<'bold' | 'mono' | 'double', { upper: number; lower: number; digit: number }> = {
+  bold: { upper: 0x1d5d4, lower: 0x1d5ee, digit: 0x1d7ec },
+  mono: { upper: 0x1d670, lower: 0x1d68a, digit: 0x1d7f6 },
+  double: { upper: 0x1d538, lower: 0x1d552, digit: 0x1d7d8 },
+}
+// double-struck capitals that live in the Letterlike Symbols block instead
+const DOUBLE_HOLES: Record<string, number> = { C: 0x2102, H: 0x210d, N: 0x2115, P: 0x2119, Q: 0x211a, R: 0x211d, Z: 0x2124 }
+
+/** The text in a letter style; `pixel` is drawn, not typed, so its text is plain. */
+export function styleText(text: string, font: FontName): string {
+  if (font === 'plain' || font === 'pixel') return text
+  return [...text].map(ch => {
+    const c = ch.codePointAt(0) ?? 0
+    if (font === 'wide') {
+      if (ch === ' ') return '　'
+      return c >= 0x21 && c <= 0x7e ? String.fromCodePoint(c - 0x21 + 0xff01) : ch
+    }
+    const base = STYLE_BASE[font]
+    if (font === 'double' && DOUBLE_HOLES[ch]) return String.fromCodePoint(DOUBLE_HOLES[ch])
+    if (c >= 0x41 && c <= 0x5a) return String.fromCodePoint(base.upper + c - 0x41)
+    if (c >= 0x61 && c <= 0x7a) return String.fromCodePoint(base.lower + c - 0x61)
+    if (c >= 0x30 && c <= 0x39) return String.fromCodePoint(base.digit + c - 0x30)
+    return ch
+  }).join('')
+}
+/** Terminal cells the styled text takes: fullwidth letters take two. */
+export const cellsOf = (text: string) => [...text].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) >= 0x3000 && (ch.codePointAt(0) ?? 0) <= 0xffef ? 2 : 1), 0)
+
+// 3×5 pixel letters for the banner, '#' lit.
+const PIXEL_FONT: Record<string, string[]> = {
+  A: ['.#.', '#.#', '###', '#.#', '#.#'], C: ['.##', '#..', '#..', '#..', '.##'],
+  D: ['##.', '#.#', '#.#', '#.#', '##.'], E: ['###', '#..', '##.', '#..', '###'],
+  L: ['#..', '#..', '#..', '#..', '###'], P: ['##.', '#.#', '##.', '#..', '#..'],
+  S: ['.##', '#..', '.#.', '..#', '##.'], T: ['###', '.#.', '.#.', '.#.', '.#.'],
+  U: ['#.#', '#.#', '#.#', '#.#', '.##'], ' ': ['...', '...', '...', '...', '...'],
+}
+export const PIXEL_TITLE = 'CLAUDE PETS'
+/** The title as a pixel grid: one string per pixel row, '#' lit. */
+export function pixelTitle(text = PIXEL_TITLE): string[] {
+  const rows = ['', '', '', '', '']
+  for (const ch of text.toUpperCase()) {
+    const g = PIXEL_FONT[ch] ?? PIXEL_FONT[' ']!
+    for (let y = 0; y < 5; y++) rows[y] += (g[y] ?? '...') + '.'
+  }
+  return rows.map(r => r.slice(0, -1))
 }
 
 type Tone = Exclude<keyof Palette, 'stripes' | 'banner'>
@@ -205,6 +351,10 @@ const CFG = {
   /** The shared leaderboard (E4): its Worker URL and GitHub OAuth app; empty means no shared board. */
   leaderboardUrl: '',
   githubClientId: '',
+  /** The theme until /retro theme picks one (E5-S03): a preset, `#accent` or `#accent on #background`. */
+  theme: 'ice',
+  /** The banner's letters until /retro font picks (E5-S04). */
+  font: 'plain' as FontName,
 }
 
 export function configure(options: PluginOptions) {
@@ -230,9 +380,14 @@ export function configure(options: PluginOptions) {
   CFG.githubClientId = str('githubClientId')
   const kind = str('petKind')
   if (isPetKind(kind)) CFG.petKind = kind
+  CFG.theme = parseTheme(str('theme')) ?? 'ice'
+  const f = str('font').toLowerCase()
+  CFG.font = isFontName(f) ? f : 'plain'
 }
 
 const PANE = 'qa-monitor'
+/** The pet's own pane, for surfaces that draw no band (VS Code, phones) (E5-S02). */
+const PET_PANE = 'pet'
 
 const ticket = atom({ plugin: 'pixel-pets', key: 'ticket' } as const, null)
 const env = atom({ plugin: 'pixel-pets', key: 'env' } as const, null)
@@ -242,8 +397,11 @@ const tests = atom({ plugin: 'pixel-pets', key: 'tests' } as const, null)
 const log = atom({ plugin: 'pixel-pets', key: 'log' } as const, [])
 const isBandHidden = atom({ plugin: 'pixel-pets', key: 'isBandHidden' } as const, false)
 const blink = atom({ plugin: 'pixel-pets', key: 'blink' } as const, true)
-const theme = atom({ plugin: 'pixel-pets', key: 'theme' } as const, 'ice')
+const theme = atom({ plugin: 'pixel-pets', key: 'theme' } as const, '')
 const isThemeName = (x: unknown): x is ThemeName => typeof x === 'string' && Object.hasOwn(THEMES, x)
+const font = atom({ plugin: 'pixel-pets', key: 'font' } as const, 'plain')
+/** The pet drawn as SVG for the desktop app, VS Code and phones, redrawn as it moves (E5-S01). */
+const petArt = atom({ plugin: 'pixel-pets', key: 'petArt' } as const, '')
 const storyId = atom({ plugin: 'pixel-pets', key: 'storyId' } as const, null)
 const story = atom({ plugin: 'pixel-pets', key: 'story' } as const, null)
 const storyError = atom({ plugin: 'pixel-pets', key: 'storyError' } as const, null)
@@ -827,8 +985,8 @@ export type PetFrame = {
 
 const COIN = 0xffd23f, COIN_SHINE = 0xfff6a0, BUG = 0xb04cff, BUG_LEGS = 0x6a1fb0
 
-/** Packs one frame into Raster cells: [codePoint, fg, bg] u32 triplets, row-major. */
-export function petCells(f: PetFrame): string {
+/** One frame's pixels, W × H (H = 4), row-major; null where the sky shows through. */
+export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: number; x0: number } {
   const W = f.columns, H = (PET_ROWS - 1) * 2
   const px: (number | null)[] = new Array<number | null>(W * H).fill(null)
   const set = (X: number, Y: number, c: number) => {
@@ -899,7 +1057,12 @@ export function petCells(f: PetFrame): string {
       if (c !== undefined) set(x0 + rx, y0 + ry, c)
     }
   })
+  return { px, W, H, x0 }
+}
 
+/** Packs one frame into Raster cells: [codePoint, fg, bg] u32 triplets, row-major. */
+export function petCells(f: PetFrame): string {
+  const { px, W, x0 } = petPixels(f)
   const bg = hex(f.bg), ground = hex(f.ground)
   const words = new Uint32Array(W * PET_ROWS * 3)
   const put = (i: number, cp: number, fg: number, back: number) => {
@@ -941,6 +1104,88 @@ export function petCells(f: PetFrame): string {
   return b64(new Uint8Array(words.buffer))
 }
 
+// ── The pet as SVG (E5-S01/S02) ──────────────────────────────────────────────
+// The desktop app, VS Code and phones have no pixel grid (Raster), but they draw
+// SVG: the same frame, a square per pixel, with the HUD as text on the ground.
+export const SVG_PX = 8
+const SVG_EVERY = 4
+const SVG_HUD_H = 18
+const SVG_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+const css = (c: number) => `#${c.toString(16).padStart(6, '0')}`
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/** Lit pixels as SVG rects, runs of one colour along a row merged into one rect. */
+function pixelRects(px: (number | null)[], W: number, H: number, P: number, dy = 0): string {
+  let out = ''
+  for (let y = 0; y < H; y++) {
+    let x = 0
+    while (x < W) {
+      const c = px[y * W + x] ?? null
+      if (c === null) { x++; continue }
+      let run = 1
+      while (x + run < W && px[y * W + x + run] === c) run++
+      out += `<rect x="${x * P}" y="${y * P + dy}" width="${run * P}" height="${P}" fill="${css(c)}"/>`
+      x += run
+    }
+  }
+  return out
+}
+
+/** One frame as an SVG document: pixels, then the ground strip with the HUD on it. */
+export function petSvg(f: PetFrame): string {
+  const { px, W, H, x0 } = petPixels(f)
+  const P = SVG_PX, w = W * P, top = H * P, h = top + SVG_HUD_H
+  const ground = f.ground
+  const hudX = 2 * P
+  const hudText = f.hud.map(seg => `<tspan fill="${css(seg.color)}">${esc(seg.text)}</tspan>`).join('')
+  const bubble = f.bubble
+    ? `<text x="${Math.min(W - 1, Math.max(0, x0 + (f.dir === 1 ? SPRITE_W : -1))) * P}" y="${P * 1.6}" font-size="${P * 1.8}" font-family="${SVG_FONT}" fill="${css(f.bubble.color)}">${esc(f.bubble.glyph)}</text>`
+    : ''
+  const tags = (f.kids ?? []).map(k => `<text x="${(Math.round(k.x) + 2) * P}" y="${P}" font-size="${P * 1.4}" font-family="${SVG_FONT}" fill="${css(k.tagColor)}">${esc(k.tag)}</text>`).join('')
+  const cursor = f.cursor && px[0] === null && px[W] === null ? `<rect x="0" y="0" width="${P}" height="${P * 2}" fill="${css(f.cursor.color)}"/>` : ''
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" shape-rendering="crispEdges">`,
+    `<rect width="${w}" height="${h}" fill="${f.bg}"/>`,
+    pixelRects(px, W, H, P),
+    cursor, tags, bubble,
+    `<rect x="0" y="${top}" width="${w}" height="2" fill="${ground}"/>`,
+    `<text x="${hudX}" y="${top + 13}" font-size="12" font-family="${SVG_FONT}" xml:space="preserve">${hudText}</text>`,
+    '</svg>',
+  ].join('')
+}
+
+/** The pixel title as Raster cells (3 rows, half blocks), centred in `columns`. */
+export function titleCells(columns: number, fg: string, bg: string): string {
+  const rows = pixelTitle(), tw = rows[0]?.length ?? 0
+  const left = Math.max(0, Math.floor((columns - tw) / 2))
+  const on = hex(fg), back = hex(bg)
+  const lit = (x: number, y: number) => y >= 1 && y <= 5 && rows[y - 1]?.[x - left] === '#'
+  const words = new Uint32Array(columns * 3 * 3)
+  for (let r = 0; r < 3; r++) {
+    for (let x = 0; x < columns; x++) {
+      const t = lit(x, r * 2), b = lit(x, r * 2 + 1), i = (r * columns + x) * 3
+      words[i] = t && b ? 0x2588 : t ? 0x2580 : b ? 0x2584 : 0x20
+      words[i + 1] = on
+      words[i + 2] = back
+    }
+  }
+  return b64(new Uint8Array(words.buffer))
+}
+
+/** The pixel title as SVG, for surfaces without a pixel grid. */
+export function titleSvg(fg: string, bg: string, stripes: string[]): string {
+  const rows = pixelTitle(), P = 4, tw = (rows[0]?.length ?? 0) * P, h = 7 * P
+  const w = tw + 2 * P + stripes.length * 3 * P
+  let out = ''
+  rows.forEach((r, y) => {
+    for (let x = 0; x < r.length; x++) if (r[x] === '#') out += `<rect x="${P + x * P}" y="${P + y * P}" width="${P}" height="${P}" fill="${fg}"/>`
+  })
+  stripes.forEach((c, i) => {
+    out += `<rect x="${tw + 2 * P + i * 3 * P}" y="${P}" width="${2 * P}" height="${5 * P}" fill="${c}"/>`
+  })
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" shape-rendering="crispEdges"><rect width="${w}" height="${h}" fill="${bg}"/>${out}</svg>`
+}
+
 /** XP needed grows with the level: LV2 at 15, LV3 at 60, LV4 at 135… */
 export const levelOf = (xp: number) => Math.floor(Math.sqrt(Math.max(0, xp) / 15)) + 1
 
@@ -962,6 +1207,9 @@ const petSim = {
   isMounted: false,
   requestId: '',
   lastCells: '',
+  /** Where a remote surface (desktop, VS Code, phone) shows the pet as SVG: the band, the pet pane. */
+  remote: { band: false, pane: false },
+  lastArt: '',
   sitUntil: 0,
   react: null as null | { glyph: string; tone: Tone; until: number; jump: boolean },
   ballX: null as number | null,
@@ -1383,6 +1631,38 @@ async function setLimit($: EngineInterface, u: Usage) {
   }
 }
 
+async function openPetPane($: EngineInterface) {
+  const pet = await readPet($)
+  return $.ui.open({ id: PET_PANE, title: `CLAUDE PETS · ${pet.name.toUpperCase()}` })
+}
+
+/** Fits the game to a new width, keeping the pet on screen. */
+function sizeSim(columns: number) {
+  petSim.columns = columns
+  if (petSim.x > columns - SPRITE_W) petSim.x = columns - SPRITE_W
+}
+
+/** A frame of the pet sitting, drawn before the first tick has run. */
+function stillFrame(pet: { kind: PetKind; name: string }, C: Palette, columns: number): PetFrame {
+  const name = pet.name.toUpperCase()
+  return {
+    kind: pet.kind, columns, x: petSim.x, dir: petSim.dir, pose: 'sit', mood: petSim.mood, lift: 0,
+    bubble: null, ballX: petSim.ballX, coins: petSim.coins, bugs: petSim.bugs, sparkle: false,
+    bg: C.bg, ground: C.dim, cursor: null,
+    hud: hud(C, name, petSim.line || `${name} THE ${pet.kind.toUpperCase()}`),
+  }
+}
+
+/** The SVG to draw on a remote surface: the latest frame, or a still one until the game ticks. */
+function remoteArt(art: string, pet: { kind: PetKind; name: string }, C: Palette, columns: number): string {
+  // a terminal on the same session sets the width; otherwise this surface does
+  if (!petSim.isMounted && petSim.columns !== Math.max(SPRITE_W + 2, columns)) {
+    sizeSim(Math.max(SPRITE_W + 2, columns))
+    petSim.lastArt = ''
+  }
+  return art || petSvg(stillFrame(pet, C, petSim.columns))
+}
+
 function hud(C: Palette, name: string, line: string): HudSegment[] {
   const s = petSim
   const hearts = s.limit === null ? 5 : Math.max(0, Math.min(5, Math.ceil((100 - s.limit) / 20)))
@@ -1398,12 +1678,13 @@ function hud(C: Palette, name: string, line: string): HudSegment[] {
 
 async function petTick($: EngineInterface) {
   const s = petSim
-  if (!s.isMounted || s.columns < SPRITE_W + 2) return
+  const isRemote = s.remote.band || s.remote.pane
+  if ((!s.isMounted && !isRemote) || s.columns < SPRITE_W + 2) return
   const now = await $.clock.now()
   if (s.lastActive === 0) s.lastActive = now
   await loadXp($)
   const [pet, themeName] = await Promise.all([readPet($), read($, theme)])
-  const C = THEMES[themeName]
+  const C = paletteOf(themeName)
   const name = pet.name.toUpperCase()
   s.tick++
   if (s.react && s.react.until < now) s.react = null
@@ -1535,7 +1816,7 @@ async function petTick($: EngineInterface) {
     void gainXp($, 5 * squashed, 'bug', squashed)
   }
 
-  const cells = petCells({
+  const frame: PetFrame = {
     sky: s.wx ? { kind: s.wx.kind, isDay: s.wx.isDay, windy: s.wx.windKmh >= WINDY_KMH, dir: 1 } : null, tick: s.tick,
     kind: pet.kind, columns: s.columns, x: s.x, dir: s.dir, pose, mood: s.mood, lift, bubble,
     ballX: s.ballX, coins: s.coins, bugs: s.bugs, sparkle, bg: C.bg, ground: C.dim,
@@ -1546,10 +1827,21 @@ async function petTick($: EngineInterface) {
     })),
     cursor: !s.isWorking && s.tick % 8 < 4 ? { color: hex(C.fg) } : null,
     hud: hud(C, name, line),
-  })
-  s.lastCells = cells
-  const shown = await $.ui.blit({ requestId: s.requestId, key: 'pet', cells, columns: s.columns, rows: PET_ROWS })
-  if (shown.deny !== undefined) s.isMounted = false
+  }
+  if (s.isMounted) {
+    const cells = petCells(frame)
+    s.lastCells = cells
+    const shown = await $.ui.blit({ requestId: s.requestId, key: 'pet', cells, columns: s.columns, rows: PET_ROWS })
+    if (shown.deny !== undefined) s.isMounted = false
+  }
+  // remote surfaces redraw the whole tree, so they get a frame every 4 ticks (~0.5 s), and only when it changed
+  if (isRemote && s.tick % SVG_EVERY === 0) {
+    const art = petSvg(frame)
+    if (art !== s.lastArt) {
+      s.lastArt = art
+      await update($, petArt, () => art)
+    }
+  }
   if (line !== s.line) {
     s.line = line
     await update($, petLine, () => line)
@@ -1887,15 +2179,24 @@ const COMMANDS: { name: string; description: string }[] = [
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
-    description: 'An 8-bit pet game in the band: /pet (show/hide) · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
+    description: 'An 8-bit pet game in the band: /pet (show/hide) · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
   },
   // not `standup`: other plugins commonly own that name
   { name: 'standup64', description: 'Three-line standup (Done / Next / Blockers) from this session, copied to the clipboard' },
   { name: 'defect', description: 'Draft a bug report for the last failed test run into the prompt' },
   { name: 'weather', description: 'Local weather in the band: /weather <city> · /weather here (IP lookup) · /weather off · /weather' },
   { name: 'guard', description: 'Claude Pets guardrails: /guard (status) · /guard off · /guard on' },
-  { name: 'retro', description: 'Toggle the Claude Pets band · /retro theme ice|phosphor|amber|c64 · /retro sound on|off' },
+  { name: 'retro', description: 'Toggle the Claude Pets band · /retro theme <preset>|#accent [on #background] · /retro font plain|bold|mono|double|wide|pixel · /retro sound on|off' },
 ]
+
+const THEME_HELP = [
+  `Presets: ${THEME_NAMES.join(' · ')}`,
+  'Your own colours: /retro theme #FF8800 (an accent; the background is mixed from it) or /retro theme #FF8800 on #101010',
+].join('\n')
+const FONT_HELP = [
+  `Banner fonts: ${FONT_NAMES.map(n => (n === 'pixel' ? 'pixel (big pixel letters)' : `${n} ${styleText('PETS', n)}`)).join(' · ')}`,
+  "The terminal's own font is its setting, not a plugin's: Windows Terminal: Settings › your profile › Appearance › Font face; macOS Terminal: Settings › Profiles › Text; VS Code: terminal.integrated.fontFamily.",
+].join('\n')
 
 /** Registers each command on its own, so a name another plugin owns costs that command alone. */
 async function registerCommands($: EngineInterface) {
@@ -1946,10 +2247,15 @@ export const register: Register = (on, options) => {
     void refreshGit($)
     $.clock.every(10000, () => void refreshGit($))
     $.clock.every(140, () => void petTick($))
+    // a theme or font picked with /retro wins over the settings'
     const savedTheme = await $.store.get('theme')
-    if (isThemeName(savedTheme)) {
-      await update($, theme, () => savedTheme)
-    }
+    const themeSpec = (typeof savedTheme === 'string' && parseTheme(savedTheme)) || CFG.theme
+    await update($, theme, () => themeSpec)
+    const savedFont = await $.store.get('font')
+    const fontPick: FontName = isFontName(savedFont) ? savedFont : CFG.font
+    await update($, font, () => fontPick)
+    // VS Code draws no band: the pet gets a pane of its own there (E5-S02)
+    if ((await $.session.surfaces()).includes('vscode') && (await read($, petShown))) void openPetPane($)
     if ((await read($, storyId)) === null) {
       const saved = (await storeMap($, 'stories'))[await repoRoot($)]
       let id = typeof saved === 'string' ? saved : null
@@ -2066,15 +2372,20 @@ export const register: Register = (on, options) => {
           'XP: +1 coin (a tool call that worked) · +5 bug squashed (an error) · +10 green test run · +2 per turn · +2 ball · helpers: +1 per subagent call that worked, +5 when its job is done',
         ].join('\n'),
       }
+    } else if (/^(pane|window)$/i.test(args)) {
+      const opened = await openPetPane($)
+      return { text: opened.isPlaced ? 'The pet pane is open. READY.' : 'The pet pane is waiting for room.' }
     } else if (args === '') {
       const shown = await update($, petShown, v => !v)
       await $.store.set('petShown', shown)
       const pet = await readPet($)
+      if (shown && (await $.session.surfaces()).includes('vscode')) await openPetPane($)
+      if (!shown) await $.ui.close({ id: PET_PANE })
       return {
         text: shown ? `${pet.name} the ${pet.kind} joins the band. READY.` : `${pet.name} is resting. /pet brings them back.`,
       }
     } else {
-      return { text: 'Usage: /pet (show/hide) · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
+      return { text: 'Usage: /pet (show/hide) · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
     }
     await update($, petShown, () => true)
     const pet = await readPet($)
@@ -2089,15 +2400,21 @@ export const register: Register = (on, options) => {
       await $.store.set('chimeOn', isOn)
       return { text: isOn ? 'Sound on: the pet speaks when a long turn ends, and on level-ups and moods.' : 'Sound off.' }
     }
-    const m = /^theme\s+(\w+)/i.exec(e.args.trim())
+    const m = /^theme(?:\s+(.+))?$/i.exec(e.args.trim())
     if (m) {
-      const name = (m[1] ?? '').toLowerCase()
-      if (!isThemeName(name)) {
-        return { text: 'Themes: ice (cyan on navy) · phosphor (green CRT) · amber · c64' }
-      }
-      await update($, theme, () => name)
-      await $.store.set('theme', name)
-      return { text: `Theme: ${name.toUpperCase()}. READY.` }
+      const spec = parseTheme(m[1] ?? '')
+      if (!spec) return { text: THEME_HELP }
+      await update($, theme, () => spec)
+      await $.store.set('theme', spec)
+      return { text: isThemeName(spec) ? `Theme: ${spec.toUpperCase()}. READY.` : `Theme: your own colours, ${spec.toUpperCase()}. READY.` }
+    }
+    const f = /^font(?:\s+(\w+))?$/i.exec(e.args.trim())
+    if (f) {
+      const name = (f[1] ?? '').toLowerCase()
+      if (!isFontName(name)) return { text: FONT_HELP }
+      await update($, font, () => name)
+      await $.store.set('font', name)
+      return { text: `Banner font: ${styleText(name.toUpperCase(), name)}. READY.` }
     }
     const hidden = await update($, isBandHidden, h => !h)
     return { text: hidden ? 'Band hidden. /retro brings it back.' : 'Band shown. READY.' }
@@ -2326,14 +2643,17 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (await read($, isBandHidden))) return next(e)
+    if (e.props.hasSurvey || (await read($, isBandHidden))) {
+      if (e.surface !== 'terminal') petSim.remote.band = false
+      return next(e)
+    }
 
     const { Box, Text } = $.ui.resolve(e)
     const W = Math.max(20, e.props.bodyColumns)
     const isTerminal = e.surface === 'terminal'
     const wantsPet = (await read($, petShown)) && e.props.maxRows >= PET_MIN_ROWS
     const withStrip = wantsPet && isTerminal
-    const [t, en, tok, res, model, cursor, entries, themeName, s, err, u, now, pet, line] = await Promise.all([
+    const [t, en, tok, res, model, cursor, entries, themeName, s, err, u, now, pet, art, fontName] = await Promise.all([
       read($, ticket),
       read($, env),
       read($, tokens),
@@ -2348,33 +2668,37 @@ export const register: Register = (on, options) => {
       read($, usage),
       $.clock.now(),
       readPet($),
-      wantsPet && !isTerminal ? read($, petLine) : Promise.resolve(''),
+      wantsPet && !isTerminal ? read($, petArt) : Promise.resolve(''),
+      read($, font),
     ])
     const g = await read($, git)
     const plan = await read($, planLabel)
     const wx = await read($, weather)
-    const C = THEMES[themeName]
+    const C = paletteOf(themeName)
     let strip: RenderChildren = null
     if (withStrip && e.surface === 'terminal') {
       const { Raster } = $.ui.resolve(e)
       const columns = Math.max(SPRITE_W + 2, Math.min(512, W - 2))
       if (petSim.columns !== columns || !petSim.lastCells) {
-        petSim.columns = columns
-        if (petSim.x > columns - SPRITE_W) petSim.x = columns - SPRITE_W
-        petSim.lastCells = petCells({
-          kind: pet.kind, columns, x: petSim.x, dir: petSim.dir, pose: 'sit', mood: petSim.mood, lift: 0,
-          bubble: null, ballX: petSim.ballX, coins: petSim.coins, bugs: petSim.bugs, sparkle: false,
-          bg: C.bg, ground: C.dim, cursor: null,
-          hud: hud(C, pet.name.toUpperCase(), `${pet.name.toUpperCase()} THE ${pet.kind.toUpperCase()}`),
-        })
+        sizeSim(columns)
+        petSim.lastCells = petCells(stillFrame(pet, C, columns))
       }
       petSim.requestId = e.requestId
       petSim.isMounted = true
       strip = <Raster key="pet" columns={columns} rows={PET_ROWS} cells={petSim.lastCells} />
-    } else {
+    } else if (isTerminal) {
       petSim.isMounted = false
+    } else {
+      // the desktop app (and any remote band): the same pet as SVG (E5-S01)
+      petSim.remote.band = wantsPet
+      if (wantsPet) {
+        const { Svg } = $.ui.resolve(e)
+        strip = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(140, W - 2))} alt={`${PETS[pet.kind].emoji} ${petSim.line || pet.name.toUpperCase()}`} />
+      }
     }
-    const left = Math.max(0, Math.floor((W - 2 - C.banner.length) / 2))
+    const isPixelTitle = fontName === 'pixel'
+    const titleText = styleText(C.banner, fontName)
+    const left = Math.max(0, Math.floor((W - 2 - cellsOf(titleText)) / 2))
     const running = entries.filter(l => l.state === 'run').pop()
     const doneTasks = s ? s.tasks.filter(x => x.status === 'LIVE' || x.status === 'DONE').length : 0
 
@@ -2383,8 +2707,8 @@ export const register: Register = (on, options) => {
     const rows: Record<BandRow, RenderChildren> = {
       banner: (
         <Box flexDirection="row">
-          <Text color={C.fg} backgroundColor={C.bg} bold>
-            {pad(' '.repeat(left) + C.banner, W - 2 - C.stripes.length * 2)}
+          <Text color={C.fg} backgroundColor={C.bg} bold wrap="truncate">
+            {' '.repeat(left) + titleText + ' '.repeat(Math.max(0, W - 2 - C.stripes.length * 2 - left - cellsOf(titleText)))}
           </Text>
           {C.stripes.map(c => (
             <Text color={c} backgroundColor={C.bg}>▐▌</Text>
@@ -2448,6 +2772,17 @@ export const register: Register = (on, options) => {
     const room = e.props.maxRows - 1 - (strip ? PET_ROWS : e.props.isWorking ? 0 : 1)
     const present = CFG.bandRows.filter(r => rows[r] !== null && rows[r] !== undefined && rows[r] !== false)
     const kept = keepRows(present, room)
+    // big pixel letters take 3 rows: only when there is room for them, else the plain banner (E5-S04)
+    if (isPixelTitle && kept.has('banner') && room - kept.size >= 2) {
+      if (isTerminal) {
+        const { Raster } = $.ui.resolve(e)
+        const columns = Math.max(1, Math.min(512, W - 2))
+        rows.banner = <Raster key="title" columns={columns} rows={3} cells={titleCells(columns, C.fg, C.bg)} />
+      } else {
+        const { Svg } = $.ui.resolve(e)
+        rows.banner = <Svg key="title" source={titleSvg(C.fg, C.bg, C.stripes)} alt="CLAUDE PETS" />
+      }
+    }
 
     return (
       <Box flexDirection="column" width={W} backgroundColor={C.bg} paddingX={1}>
@@ -2463,13 +2798,53 @@ export const register: Register = (on, options) => {
         {!strip && !e.props.isWorking && (
           <Text color={cursor ? C.fg : C.bg} backgroundColor={C.bg}>{' █'}</Text>
         )}
-        {wantsPet && !isTerminal && (
-          <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
-            {` ${PETS[pet.kind].emoji} ${line || pet.name.toUpperCase()}`}
-          </Text>
-        )}
       </Box>
     )
+  })
+
+  // The pet pane (E5-S02): where there is no band, the pet, its HUD, usage and weather.
+  on('ui.render', { component: 'Pane', requestId: PET_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const W = Math.max(24, e.props.bodyColumns)
+    const [themeName, fontName, pet, art, line, u, wx, now] = await Promise.all([
+      read($, theme), read($, font), readPet($), read($, petArt), read($, petLine), read($, usage), read($, weather), $.clock.now(),
+    ])
+    const C = paletteOf(themeName)
+    let drawing: RenderChildren
+    if (e.surface === 'terminal') {
+      petSim.remote.pane = false
+      drawing = <Text color={C.dim} backgroundColor={C.bg} wrap="wrap">{`${PETS[pet.kind].emoji} ${pet.name.toUpperCase()} LIVES IN THE BAND ABOVE THE PROMPT HERE.`}</Text>
+    } else {
+      petSim.remote.pane = true
+      const { Svg } = $.ui.resolve(e)
+      drawing = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(100, W - 2))} alt={`${PETS[pet.kind].emoji} ${line || pet.name.toUpperCase()}`} />
+    }
+    return (
+      <Box flexDirection="column" backgroundColor={C.bg} width={W} paddingX={1}>
+        <Text color={C.fg} backgroundColor={C.bg} bold wrap="truncate">{styleText(C.banner, fontName === 'pixel' ? 'plain' : fontName)}</Text>
+        {drawing}
+        <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">{line || `${pet.name.toUpperCase()} THE ${pet.kind.toUpperCase()}`}</Text>
+        {usageRow(Box, Text, C, u, now, W >= 60 ? 10 : 6)}
+        {weatherRow(Box, Text, C, wx, CFG.temperatureUnit)}
+        <Box flexDirection="row" gap={1}>
+          <Button key="ball" label="BALL" onPress={() => throwBall($)} />
+          <Button key="pat" label="PAT" onPress={() => patPet($)} />
+          <Button key="close" role="dismiss" label="CLOSE" onPress={() => $.ui.close({ id: PET_PANE })} />
+        </Box>
+      </Box>
+    )
+  })
+
+  on('ui.close', async ($, e, next) => {
+    if (e.id === PET_PANE) petSim.remote.pane = false
+    return next(e)
+  })
+
+  // VS Code attaching to a running session gets the pet pane too
+  on('session.attach', async ($, e, next) => {
+    const r = await next(e)
+    if (e.surface === 'vscode' && (await read($, petShown))) void openPetPane($)
+    return r
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -2479,7 +2854,7 @@ export const register: Register = (on, options) => {
       read($, ticket), read($, env), read($, tests), read($, log), read($, theme), read($, story), read($, storyError),
       read($, usage), $.clock.now(),
     ])
-    const C = THEMES[themeName]
+    const C = paletteOf(themeName)
     const storyRows = s ? 4 + s.ac.length + s.tasks.length : 2
     const room = Math.max(3, (e.viewport?.rows ?? 30) - 19 - storyRows)
     const shown = entries.slice(-room)

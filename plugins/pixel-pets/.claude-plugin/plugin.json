@@ -1,7 +1,7 @@
 {
   "name": "pixel-pets",
-  "version": "1.2.1",
-  "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code, with plan usage, your backlog story and branch, pet voices and guardrails",
+  "version": "1.3.0",
+  "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code (terminal, desktop app and VS Code), with plan usage, weather, your backlog story, themes you colour yourself, pet voices and guardrails",
   "author": {
     "name": "quangtm0404"
   },
@@ -103,6 +103,26 @@
       "title": "Leaderboard GitHub app",
       "description": "The leaderboard's GitHub OAuth app Client ID (public by design; used for /pet join's device sign-in)",
       "default": "Ov23liHlgyFS3sCQIQ3l"
+    },
+    "theme": {
+      "type": "string",
+      "title": "Theme",
+      "description": "A preset (ice, phosphor, amber, c64, mint, rose, mono, paper) or your own colours: #FF8800, or #FF8800 on #101010. /retro theme changes it later",
+      "default": "ice"
+    },
+    "font": {
+      "type": "string",
+      "title": "Banner font",
+      "description": "How the banner's letters look. The terminal's own font is set in your terminal app; this styles the banner within it",
+      "default": "plain",
+      "options": [
+        "plain",
+        "bold",
+        "mono",
+        "double",
+        "wide",
+        "pixel"
+      ]
     }
   }
 }

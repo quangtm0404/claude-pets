@@ -38,7 +38,8 @@ claude --plugin-dir ./plugins/pixel-pets
 - **Branch and worktree**: repo name, branch and uncommitted file count. A red `≠` appears when the branch names a different epic than the story you're tracking.
 - **Backlog story**: status, title, epic and tasks read from your project's markdown plan (see below), not from an issue tracker. A project without one just shows `NO PLAN YET · /story plan TO POINT AT YOURS`.
 - **Tests**: pass/fail from the last Playwright, Jest, Vitest, pytest, dotnet or npm test run.
-- **Themes**: `/retro theme ice` (cyan on navy, the default), `phosphor` (green CRT), `amber`, or `c64`.
+- **Themes**: presets `/retro theme ice` (cyan on navy, the default), `phosphor` (green CRT), `amber`, `c64`, `mint`, `rose`, `mono`, or `paper` (dark ink on cream, for light terminals). Or your own colours: `/retro theme #FF8800` picks an accent and mixes a background from it, and `/retro theme #FF8800 on #101010` sets both. The rest of the palette is mixed from those two, so any pair stays readable.
+- **Banner fonts**: `/retro font plain`, `bold` (𝗖𝗟𝗔𝗨𝗗𝗘 𝗣𝗘𝗧𝗦), `mono` (𝙲𝙻𝙰𝚄𝙳𝙴 𝙿𝙴𝚃𝚂), `double` (ℂ𝕃𝔸𝕌𝔻𝔼 ℙ𝔼𝕋𝕊), `wide` (ＣＬＡＵＤＥ　ＰＥＴＳ) or `pixel` (big pixel letters, when the band has room). A plugin can't change your terminal's own font; that's the terminal's setting (Windows Terminal: Settings › your profile › Appearance › Font face; macOS Terminal: Settings › Profiles › Text; VS Code: `terminal.integrated.fontFamily`). Retro fonts such as VT323 or Press Start 2P suit it.
 
 ### The pet game
 A 7×4-pixel pet walks the bottom of the band. It always gets its three rows first: in a short terminal (macOS's default 80×24, say) the info rows above it drop out one by one instead, so the pet never disappears. Pick one of 14 with `/pet list` and `/pet <animal>`:
@@ -112,6 +113,8 @@ Change them in `/config` under pixel-pets, or in `settings.json` under `pluginCo
 | `playerName` | *(empty)* | Your name on `/pet board` |
 | `leaderboardUrl` | the public board | The world board's service; empty turns it off |
 | `githubClientId` | the public board's app | The world board's GitHub app, for `/pet join` |
+| `theme` | `ice` | A preset or your own colours: `#FF8800`, or `#FF8800 on #101010`. `/retro theme` overrides it |
+| `font` | `plain` | The banner's letters: `plain`, `bold`, `mono`, `double`, `wide` or `pixel`. `/retro font` overrides it |
 
 ### Backlog formats
 Claude Pets understands two markdown shapes; the first match wins.
@@ -167,7 +170,19 @@ Claude Pets runs wherever Claude Code's terminal does: **Windows, macOS and Linu
 | macOS | Claude Code's own audio (`afplay`) |
 | Linux | the first of `paplay` (PulseAudio/PipeWire), `pw-play` or `aplay` that's installed; silent if none is |
 
-The pixel strip needs a terminal with 24-bit colour and Unicode block characters, which covers Windows Terminal, iTerm2, Terminal.app, GNOME Terminal, Konsole, kitty and WezTerm. In the desktop app the pet shows as an emoji line instead.
+The pixel strip needs a terminal with 24-bit colour and Unicode block characters, which covers Windows Terminal, iTerm2, Terminal.app, GNOME Terminal, Konsole, kitty and WezTerm.
+
+### Desktop app and VS Code
+
+One install covers every Claude Code app on the machine, since they share `~/.claude`.
+
+| | Terminal | Desktop app | VS Code |
+|---|---|---|---|
+| The band (usage, weather, story, branch) | ✅ | ✅ | no band there: the pet pane instead |
+| The pixel pet | ✅ drawn in cells | ✅ drawn as SVG | ✅ in the pet pane, as SVG |
+| Commands, sounds, weather, boards, guardrails | ✅ | ✅ | ✅ |
+
+In VS Code the pet pane opens by itself when the pet is shown; `/pet pane` opens it anywhere, with BALL and PAT buttons, usage and weather.
 
 ## Privacy
 Everything stays local: the backlog files, git and the transcript are read on your machine, and state (your pet, profile and place) is kept in Claude Code's own plugin storage. The exceptions, each only when you use it:
