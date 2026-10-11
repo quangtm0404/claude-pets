@@ -491,23 +491,24 @@ So that I can look back on, and share, what my pet and I did.
 
 </details>
 
-### E8 · Life and seasons - ⬜ To do
+### E8 · Life and seasons - 🟡 In progress
 
 **Outcome.** The pet keeps you company through the day, the week and the year.
 
-<details><summary><b>E8-S01</b> - as a <b>user</b>, I want <b>a focus timer my pet guards</b> · ⬜ To do · 3 pts</summary>
+<details><summary><b>E8-S01</b> - as a <b>user</b>, I want <b>a Pomodoro focus timer my pet guards</b> · ✅ Done · 3 pts</summary>
 
 So that I can work in focused blocks.
 
 **Acceptance criteria**
-- `/pet focus 25` starts a timer shown in the band; the pet sits on guard while it runs
-- A soft chime and a toast mark the end, with XP for each completed session; `/pet focus stop` ends it early with no XP
+- `/pet focus` starts Pomodoro rounds, 25 minutes of focus then a 5 minute break, until stopped; `/pet focus 45/5`, `50/10` or `45` (45/5) set other times, and every fourth break is three times as long
+- The countdown is shown in the band; the pet sits on guard during focus and stretches on a break
+- A soft chime and a toast mark each change, with XP for each finished round (10 for 25 minutes); `/pet focus stop` ends it early with no XP
 - The timer survives a plugin reload
 
 | Task | Kind | Status |
 |---|---|---|
-| Focus timer, band row and XP | technical | ⬜ To do |
-| Start, finish, stop and reload asserted | testing | ⬜ To do |
+| Focus timer, band row and XP | technical | ✅ Done |
+| Start, finish, stop and reload asserted | testing | ✅ Done |
 
 </details>
 

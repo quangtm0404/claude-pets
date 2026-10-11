@@ -91,6 +91,8 @@ declare module 'claude-code' {
       petArt: string
       /** The runner game is offered in the band while a long turn runs. */
       runnerOn: boolean
+      /** The focus timer's countdown for the band, or empty when none runs. */
+      focusText: string
       storyId: string | null
       story: Story | null
       /** The tracked id the plan doesn't have (shown as a hint, not an error). */

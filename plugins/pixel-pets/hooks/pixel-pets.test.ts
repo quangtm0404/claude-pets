@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { petPixels, stageOf } from './register'
+import { breakAfter, focusLabel, focusXp, parseFocus, petPixels, stageOf } from './register'
 import { press, step } from './runner'
 
 const run = (command: string, args: string) => ({
@@ -1097,4 +1097,95 @@ test('E7-S03: /pet diary tells the day; the card is an SVG picture', async ($, o
   const card = await $.command.run(run('pet', 'diary card'))
   expect(card.text).toContain('Copied the diary card as SVG')
   expect(copied).toMatch(/^<svg [^>]*>.*PIXEL&#39;S DIARY|^<svg [^>]*>.*PIXEL'S DIARY/)
+})
+
+// ── E8: life and seasons ────────────────────────────────────────────────────
+const NINE = Date.parse('2026-10-09T09:00:00Z')
+/** A session on a clock the test moves: the store, toasts and sounds it records. */
+function timed(on: On, seed: Record<string, unknown> = {}) {
+  const store: Record<string, unknown> = { ...seed }
+  const toasts: string[] = []
+  const clock = mock.clock(on, { now: NINE })
+  on('session.root', () => ({ value: '/repo' }))
+  on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
+  on('fs.exists', () => ({ value: false }))
+  on('store.get', (_$, e) => ({ value: store[(e as { key: string }).key] }) as never)
+  on('store.set', (_$, e) => ((store[(e as { key: string }).key] = (e as { value: unknown }).value), { value: undefined }) as never)
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', (_$, e) => (toasts.push(e.text), { value: undefined }))
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }) as never)
+  return { store, toasts, clock }
+}
+const bandText = async ($: { ui: { mount: (x: never) => Promise<{ find: (q: { text: RegExp }) => Promise<unknown>; unmount: () => Promise<void> }> } }, re: RegExp) => {
+  const ui = await $.ui.mount(tallBand('terminal') as never)
+  const found = await ui.find({ text: re })
+  await ui.unmount()
+  return found
+}
+
+test('E8-S01: focus times parse as Pomodoro rounds; every fourth break is long', () => {
+  expect(parseFocus('')).toEqual({ focusMin: 25, breakMin: 5 })
+  expect(parseFocus('45')).toEqual({ focusMin: 45, breakMin: 5 })
+  expect(parseFocus('45/5')).toEqual({ focusMin: 45, breakMin: 5 })
+  expect(parseFocus('50 10')).toEqual({ focusMin: 50, breakMin: 10 })
+  expect(parseFocus('soon')).toBeNull()
+  expect(parseFocus('500')).toBeNull()
+  expect(focusXp(25)).toBe(10)
+  expect(focusXp(45)).toBe(18)
+  const f = { focusMin: 25, breakMin: 5, phase: 'focus' as const, endsAt: 0, round: 1 }
+  expect(breakAfter(f)).toBe(5)
+  expect(breakAfter({ ...f, round: 4 })).toBe(15)
+  expect(focusLabel({ ...f, endsAt: 61_000 }, 0)).toBe('◷ FOCUS 1:01 · ROUND 1')
+})
+
+test('E8-S01: /pet focus 25/5 counts down in the band, pays XP, takes a break, then starts round 2', async ($, on) => {
+  const { store, toasts, clock } = timed(on)
+  const ran = await $.command.run(run('pet', 'focus 25/5'))
+  expect(ran.text).toContain('Focus 25 min, then a 5 min break')
+  expect(await bandText($, /◷ FOCUS 25:00 · ROUND 1/)).toBeDefined()
+  await clock.advance(10 * 60_000)
+  expect(await bandText($, /◷ FOCUS 15:00 · ROUND 1/)).toBeDefined()
+  expect((await $.command.run(run('pet', 'stats'))).text).toContain('Now: GUARDING YOUR FOCUS')
+
+  await clock.advance(15 * 60_000)
+  expect(toasts).toContain('▶ FOCUS ROUND 1 DONE · +10 XP · 5 MIN BREAK: STAND UP, STRETCH, DRINK SOME WATER')
+  expect(store.petXp).toBe(10)
+  expect((store.diary as { focus: number }).focus).toBe(1)
+  expect(await bandText($, /☕ BREAK 5:00/)).toBeDefined()
+
+  await clock.advance(5 * 60_000)
+  expect(toasts.some(t => t.startsWith('▶ BREAK OVER · FOCUS ROUND 2: 25 MIN'))).toBe(true)
+  expect(await bandText($, /◷ FOCUS 25:00 · ROUND 2/)).toBeDefined()
+})
+
+test('E8-S01: /pet focus stop ends it early with no XP', async ($, on) => {
+  const { store, toasts, clock } = timed(on)
+  await $.command.run(run('pet', 'focus'))
+  await clock.advance(20 * 60_000)
+  expect((await $.command.run(run('pet', 'focus stop'))).text).toContain('earns no XP')
+  await clock.advance(10 * 60_000)
+  expect(store.focus).toBeNull()
+  expect(store.petXp).toBeUndefined()
+  expect(toasts.filter(t => t.includes('FOCUS'))).toEqual([])
+  expect(await bandText($, /◷ FOCUS/)).toBeUndefined()
+})
+
+const START = { cwd: '/repo', surface: 'terminal', isInteractive: true } as never
+test('E8-S01: the timer survives a reload; one that ended while Claude Code was closed is dropped', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('session.surfaces', () => ({ value: ['terminal'] }) as never)
+  on('ui.log', () => ({ value: undefined }) as never)
+  on('ui.blit', () => ({ value: {} }) as never)
+  on('http.fetch', () => ({ value: { status: 500, ok: false, headers: {}, text: '' } }) as never)
+  const { store, toasts, clock } = timed(on, { focus: { focusMin: 25, breakMin: 5, phase: 'focus', endsAt: NINE + 60_000, round: 3 } })
+  await $.session.start(START)
+  expect(await bandText($, /◷ FOCUS 1:00 · ROUND 3/)).toBeDefined()
+  await clock.advance(60_000)
+  expect(toasts[0]).toContain('FOCUS ROUND 3 DONE · +10 XP')
+
+  store.focus = { focusMin: 25, breakMin: 5, phase: 'focus', endsAt: NINE - 3_600_000, round: 1 }
+  await $.session.start(START)
+  expect(store.focus).toBeNull()
+  // let the session's own first reads settle before the test ends
+  await clock.advance(1000)
 })

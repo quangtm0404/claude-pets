@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.0 — 2026-10-11
+
+Life and seasons begins ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E8-S01).
+
+- **A Pomodoro focus timer** your pet guards: `/pet focus` runs 25/5 rounds until `/pet focus stop`; `/pet focus 45/5` (or any focus/break) sets your own. The countdown shows in the band, the pet stands guard and stretches on breaks, and each finished round chimes and earns XP. Every fourth break is long. It survives a plugin reload.
+- The diary counts focus rounds.
+
 ## 1.5.1 — 2026-10-11
 
 - **The runner game is now optional** and off by default. `/pet play` opens it in the band (even between turns) until `/pet play off`; `/pet play auto` brings back the old behaviour of opening it by itself 8 seconds into a turn.

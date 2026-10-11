@@ -100,6 +100,11 @@ Your name comes from the `playerName` setting, else git's `user.name`, else your
 
 The board runs at `https://claude-pets-board.claude-pets-leaderboard.workers.dev` (a Cloudflare Worker; the code is in [server/](server/README.md)). Nothing is sent until you run `/pet join`. To turn the world board off entirely, empty the `leaderboardUrl` setting. To run your own, follow [server/README.md](server/README.md) and point the two settings at it.
 
+### Focus timer (Pomodoro)
+- **`/pet focus`**: 25 minutes of focus, then a 5 minute break, round after round. The countdown sits next to `READY.` in the band; your pet guards your focus and stretches with you on breaks.
+- **`/pet focus 45/5`** (or `50/10`, `90/15`; `/pet focus 45` means 45/5) sets your own times. Every fourth break is three times as long.
+- Each finished round chimes and earns XP (10 for 25 minutes). **`/pet focus stop`** ends it; a round cut short earns nothing. The timer carries on through `/reload-plugins`.
+
 ### Share your pet (opt-in, for players on the world board)
 - **`/pet card`**: a live badge for your GitHub profile README, drawn by the board in your theme's colours with what your pet wears. It updates as you play; `/pet leave` removes it.
   ```markdown

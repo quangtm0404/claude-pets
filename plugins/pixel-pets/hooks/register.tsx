@@ -412,6 +412,8 @@ const font = atom({ plugin: 'pixel-pets', key: 'font' } as const, 'plain')
 const petArt = atom({ plugin: 'pixel-pets', key: 'petArt' } as const, '')
 /** The runner game is offered in the band (E6-S01). */
 const runnerOn = atom({ plugin: 'pixel-pets', key: 'runnerOn' } as const, false)
+/** The focus timer's countdown for the band, or '' (E8-S01). */
+const focusText = atom({ plugin: 'pixel-pets', key: 'focusText' } as const, '')
 const storyId = atom({ plugin: 'pixel-pets', key: 'storyId' } as const, null)
 const story = atom({ plugin: 'pixel-pets', key: 'story' } as const, null)
 const storyError = atom({ plugin: 'pixel-pets', key: 'storyError' } as const, null)
@@ -1125,6 +1127,8 @@ const petSim = {
   toolSince: null as number | null,
   toolName: '',
   wearing: [] as ItemId[],
+  /** The focus timer, mirrored from the store (E8-S01). */
+  focus: null as null | Focus,
   /** A friend's pet visiting for a minute (E7-S02). */
   guest: null as null | { login: string; kind: PetKind; level: number; wearing: ItemId[]; x: number; dir: 1 | -1; pose: Pose; until: number },
   ballX: null as number | null,
@@ -1340,6 +1344,7 @@ export async function shopCommand($: EngineInterface, verb: 'buy' | 'wear', what
 /** What the pet is reacting to right now, for /pet stats (E6-S04). */
 async function nowLine($: EngineInterface): Promise<string[]> {
   if (petSim.isConflict) return ['Now: PUZZLED BY A MERGE CONFLICT (resolve it and commit)']
+  if (petSim.focus) return [`Now: ${petSim.focus.phase === 'focus' ? 'GUARDING YOUR FOCUS' : 'ON A BREAK'} · ${focusLabel(petSim.focus, await $.clock.now())}`]
   const g = petSim.guest
   if (g && g.until > (await $.clock.now())) return [`Now: PLAYING WITH ${g.login.toUpperCase()}'S ${g.kind.toUpperCase()} (LV${g.level})`]
   const r = petSim.react
@@ -1375,6 +1380,123 @@ async function creditRun($: EngineInterface, score: number) {
   }
 }
 
+// ── The focus timer (E8-S01): Pomodoro rounds the pet guards ────────────────
+// Kept in $.store so it outlives a reload. Every open session arms its own clock;
+// the one that still finds the phase unfinished in the store closes it.
+export type Focus = { focusMin: number; breakMin: number; phase: 'focus' | 'break'; endsAt: number; round: number }
+/** Every fourth break is a long one, three times the usual. */
+export const LONG_BREAK_EVERY = 4
+/** A phase that ended longer ago than this (Claude Code was closed) is dropped, not credited. */
+const FOCUS_MISSED_MS = 60_000
+const focusClock = { timer: null as null | { cancel: () => void }, text: '' }
+
+/** XP for a finished focus round: 10 for 25 minutes, 18 for 45. */
+export const focusXp = (min: number) => Math.max(1, Math.round(min * 0.4))
+
+/** `''` (25/5), `45` (45/5), `45/5`, `50 10`; null when it isn't a timer. */
+export function parseFocus(arg: string): { focusMin: number; breakMin: number } | null {
+  const a = arg.trim()
+  if (!a) return { focusMin: 25, breakMin: 5 }
+  const m = /^(\d{1,3})(?:\s*[/\s]\s*(\d{1,2}))?$/.exec(a)
+  if (!m) return null
+  const focusMin = Number(m[1]), breakMin = m[2] === undefined ? 5 : Number(m[2])
+  return focusMin >= 1 && focusMin <= 180 && breakMin <= 60 ? { focusMin, breakMin } : null
+}
+
+export const breakAfter = (f: Focus) => (f.round % LONG_BREAK_EVERY === 0 ? f.breakMin * 3 : f.breakMin)
+
+export function mmss(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+export function focusLabel(f: Focus, now: number): string {
+  return f.phase === 'focus' ? `◷ FOCUS ${mmss(f.endsAt - now)} · ROUND ${f.round}` : `☕ BREAK ${mmss(f.endsAt - now)}`
+}
+
+async function readFocus($: EngineInterface): Promise<Focus | null> {
+  const f = (await $.store.get('focus')) as Focus | null | undefined
+  return f && typeof f === 'object' && typeof f.endsAt === 'number' ? f : null
+}
+
+/** The band's countdown, redrawn only when the text changes (once a second while a timer runs). */
+async function refreshFocusText($: EngineInterface) {
+  const f = petSim.focus
+  const text = f ? focusLabel(f, await $.clock.now()) : ''
+  if (text === focusClock.text) return
+  focusClock.text = text
+  await update($, focusText, () => text)
+}
+
+/** Stores the timer (or clears it) and arms this session's clock for the phase's end. */
+async function setFocus($: EngineInterface, f: Focus | null) {
+  await $.store.set('focus', f)
+  petSim.focus = f
+  focusClock.timer?.cancel()
+  focusClock.timer = null
+  if (f) focusClock.timer = $.clock.after(Math.max(0, f.endsAt - (await $.clock.now())), () => void endPhase($, f))
+  await refreshFocusText($)
+}
+
+async function endPhase($: EngineInterface, armed: Focus) {
+  const f = await readFocus($)
+  // another session already moved it on, or it was stopped or restarted
+  if (!f || f.endsAt !== armed.endsAt || f.phase !== armed.phase) {
+    petSim.focus = f
+    return
+  }
+  const now = await $.clock.now()
+  const pet = await readPet($)
+  if (f.phase === 'focus') {
+    const xp = focusXp(f.focusMin)
+    const rest = breakAfter(f)
+    await setFocus($, rest > 0 ? { ...f, phase: 'break', endsAt: now + rest * 60_000 } : null)
+    await gainXp($, xp, 'focus')
+    await saveXp($)
+    petReact('★', 'warn', 5000, now, true, { text: `GUARDED FOCUS ROUND ${f.round}` })
+    $.ui.toast(rest > 0
+      ? `▶ FOCUS ROUND ${f.round} DONE · +${xp} XP · ${rest} MIN BREAK: STAND UP, STRETCH, DRINK SOME WATER`
+      : `▶ FOCUS DONE · +${xp} XP`, { timeoutMs: 10_000 })
+  } else {
+    await setFocus($, { ...f, phase: 'focus', round: f.round + 1, endsAt: now + f.focusMin * 60_000 })
+    $.ui.toast(`▶ BREAK OVER · FOCUS ROUND ${f.round + 1}: ${f.focusMin} MIN. ${pet.name.toUpperCase()} IS ON GUARD`, { timeoutMs: 8000 })
+  }
+  void playSound($, PETS[pet.kind].voice.happy)
+}
+
+/** After a reload: picks the timer up again, or drops one that ended while nobody was here. */
+async function resumeFocus($: EngineInterface) {
+  const f = await readFocus($)
+  if (!f) return
+  if ((await $.clock.now()) - f.endsAt > FOCUS_MISSED_MS) await setFocus($, null)
+  else await setFocus($, f)
+}
+
+export const FOCUS_HELP = [
+  'FOCUS TIMER (Pomodoro): your pet guards your focus, then reminds you to take a break.',
+  '  /pet focus             25 min focus, 5 min break, round after round',
+  '  /pet focus 45/5        any focus/break in minutes: 45/5, 50/10, 90/15 · /pet focus 45 means 45/5',
+  `  /pet focus stop        ends it; a round cut short earns no XP`,
+  `Each finished round: a chime, a toast and XP (10 for 25 min). Every ${LONG_BREAK_EVERY}th break is three times as long.`,
+].join('\n')
+
+async function focusCommand($: EngineInterface, arg: string): Promise<string> {
+  const a = arg.trim().toLowerCase()
+  const now = await $.clock.now()
+  const cur = await readFocus($)
+  if (/^(stop|off|end|cancel)$/.test(a)) {
+    await setFocus($, null)
+    return cur ? 'Focus timer stopped. A round cut short earns no XP.' : 'No focus timer is running.'
+  }
+  if (/^(help|\?)$/.test(a)) return FOCUS_HELP
+  if (!a && cur) return `${focusLabel(cur, now)} · ${cur.focusMin}/${cur.breakMin} · /pet focus stop ends it.`
+  const p = parseFocus(a)
+  if (!p) return FOCUS_HELP
+  await setFocus($, { ...p, phase: 'focus', round: 1, endsAt: now + p.focusMin * 60_000 })
+  const pet = await readPet($)
+  return `Focus ${p.focusMin} min${p.breakMin ? `, then a ${p.breakMin} min break, round after round` : ', one round'}. ${pet.name.toUpperCase()} is on guard: the countdown is in the band. /pet focus stop ends it.`
+}
+
 const LONG_TOOL_MS = 60_000
 const VISIT_MS = 60_000
 const PUSH_RE = /\bgit\s+push\b/
@@ -1384,11 +1506,11 @@ const SETTLE_RE = /\bgit\s+(commit|status|merge\s+--(continue|abort)|rebase\s+--
 // ── The diary (E7-S03): one day of play, kept on this machine ───────────────
 export type Diary = {
   day: string
-  xp: number; coins: number; bugs: number; helpers: number; turns: number; runnerXp: number; visits: number
+  xp: number; coins: number; bugs: number; helpers: number; turns: number; runnerXp: number; visits: number; focus: number
   green: number; red: number
   stories: string[]
 }
-const freshDiary = (day: string): Diary => ({ day, xp: 0, coins: 0, bugs: 0, helpers: 0, turns: 0, runnerXp: 0, visits: 0, green: 0, red: 0, stories: [] })
+const freshDiary = (day: string): Diary => ({ day, xp: 0, coins: 0, bugs: 0, helpers: 0, turns: 0, runnerXp: 0, visits: 0, focus: 0, green: 0, red: 0, stories: [] })
 
 async function readDiary($: EngineInterface): Promise<Diary> {
   const today = dayOf(await $.clock.now())
@@ -1407,7 +1529,7 @@ export function diaryText(d: Diary, pet: { kind: PetKind; name: string }, wx: We
   return [
     `${pet.name.toUpperCase()}'S DIARY · ${d.day}`,
     `Dear diary, today I collected ◆${d.coins}, squashed ${n(d.bugs, 'bug')} and earned ${d.xp} XP.`,
-    `Tests: ${d.green} green, ${d.red} red · Helpers home: ${d.helpers} · Turns: ${d.turns} · Runner: ${d.runnerXp} XP · Visits: ${d.visits}`,
+    `Tests: ${d.green} green, ${d.red} red · Helpers home: ${d.helpers} · Turns: ${d.turns} · Runner: ${d.runnerXp} XP · Visits: ${d.visits} · Focus rounds: ${d.focus}`,
     d.stories.length ? `Worked on: ${d.stories.join(', ')}` : 'Worked on: no tracked story',
     wx ? `Weather: ${wx.place}, ${fmtTemp(wx.tempC, unit)}, ${wx.label.toLowerCase()}.` : '',
   ].filter(Boolean).join('\n')
@@ -1433,7 +1555,7 @@ export function diarySvg(text: string, pet: { kind: PetKind }, level: number, it
 }
 
 // ── Profile, pet board, streaks and achievements (E3) ───────────────────────
-export type XpReason = 'coin' | 'bug' | 'helper' | 'green' | 'turn' | 'ball' | 'game' | 'visit' | 'other'
+export type XpReason = 'coin' | 'bug' | 'helper' | 'green' | 'turn' | 'ball' | 'game' | 'visit' | 'focus' | 'other'
 export type Profile = {
   since: string
   totals: { xp: number; coins: number; bugs: number; helpers: number; green: number; turns: number; balls: number }
@@ -1520,6 +1642,7 @@ async function recordXp($: EngineInterface, n: number, why: XpReason, count: num
     if (why === 'turn') d.turns += 1
     if (why === 'game') d.runnerXp += n
     if (why === 'visit') d.visits += 1
+    if (why === 'focus') d.focus += 1
   })
   const p = await bumpProfile($, prof => {
     prof.totals.xp += n
@@ -1845,6 +1968,16 @@ async function petTick($: EngineInterface) {
   } else if (s.isConflict) {
     bubble = { glyph: '?', color: hex(C.warn) }
     line = `${name} IS PUZZLED BY A MERGE CONFLICT`
+  } else if (s.focus && !s.isWorking && s.focus.phase === 'focus') {
+    // on guard: sits facing out, glancing round now and then
+    if (s.tick % 60 === 0) s.dir = s.dir === 1 ? -1 : 1
+    bubble = s.tick % 40 < 6 ? { glyph: '!', color: hex(C.info) } : null
+    line = `${name} GUARDS YOUR FOCUS · ${mmss(s.focus.endsAt - now)}`
+  } else if (s.focus && !s.isWorking) {
+    // a break: stretches up and down
+    lift = s.tick % 16 < 8 ? 1 : 0
+    pose = s.tick % 32 < 16 ? 'sit' : walk(4)
+    line = `${name} STRETCHES · BREAK ${mmss(s.focus.endsAt - now)} · STAND UP, DRINK SOME WATER`
   } else if (nearestBug && !s.isWorking) {
     speed = s.mood === 'happy' ? 0.8 : 1.0
     face(nearestBug.x)
@@ -2317,7 +2450,7 @@ const COMMANDS: { name: string; description: string }[] = [
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
-    description: 'Claude Pets: /pet help lists everything · /pet (show/hide) · /pet weather <city>|here|off · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
+    description: 'Claude Pets: /pet help lists everything · /pet focus [25/5|45/5|stop] · /pet (show/hide) · /pet weather <city>|here|off · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
   },
   // not `standup`: other plugins commonly own that name
   { name: 'standup64', description: 'Three-line standup (Done / Next / Blockers) from this session, copied to the clipboard' },
@@ -2338,6 +2471,7 @@ export const PET_HELP = [
   '  /pet stats                 level, stage, XP, mood, coins, helpers',
   '  /pet shop                  spend coins: bow, scarf, shades, hat, lantern, crown',
   '  /pet buy <item> · /pet wear <item>|none   buy it; put it on or take it off',
+  '  /pet focus [45/5] · stop  a Pomodoro timer your pet guards (25/5 by default); /pet focus help',
   '  /pet play [off]            open (or close) the runner game in the band; click it, then space to jump',
   '  /pet play auto [off]       open it by itself while Claude works (off by default)',
   '  /pet pane                  the pet in a pane of its own (VS Code opens it by itself)',
@@ -2461,6 +2595,8 @@ export const register: Register = (on, options) => {
     void refreshGit($)
     $.clock.every(10000, () => void refreshGit($))
     $.clock.every(140, () => void petTick($))
+    await resumeFocus($)
+    $.clock.every(1000, () => void refreshFocusText($))
     // a theme or font picked with /retro wins over the settings'
     const savedTheme = await $.store.get('theme')
     const themeSpec = (typeof savedTheme === 'string' && parseTheme(savedTheme)) || CFG.theme
@@ -2641,6 +2777,8 @@ export const register: Register = (on, options) => {
       game.isManual = true
       await update($, runnerOn, () => true)
       return { text: 'The runner is in the band: click it, then space to jump the bugs. /pet play off closes it.' }
+    } else if (/^focus\b/i.test(args)) {
+      return { text: await focusCommand($, args.replace(/^focus\s*/i, '')) }
     } else if (/^shop$/i.test(args)) {
       return { text: shopText(await readWallet($)) }
     } else if (/^(buy|wear)\s+\S/i.test(args)) {
@@ -2969,6 +3107,9 @@ export const register: Register = (on, options) => {
     const g = await read($, git)
     const plan = await read($, planLabel)
     const wx = await read($, weather)
+    // read so the countdown redraws each second; drawn from the timer itself, so it is never stale
+    await read($, focusText)
+    const fx = petSim.focus ? focusLabel(petSim.focus, now) : ''
     const C = paletteOf(themeName)
     let strip: RenderChildren = null
     if (isPlaying && (e.surface === 'terminal' || e.surface === 'desktop')) {
@@ -3094,13 +3235,16 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" width={W} backgroundColor={C.bg} paddingX={1}>
         {present.filter(r => kept.has(r)).map(r => rows[r])}
-        {e.props.isWorking ? (
-          <Text color={C.warn} backgroundColor={C.bg} wrap="truncate">
-            {` RUN ${running ? `${running.tool.toUpperCase()} ${running.detail}` : ''}`.trimEnd() + '…'}
-          </Text>
-        ) : (
-          <Text color={C.fg} backgroundColor={C.bg}>{' READY.'}</Text>
-        )}
+        <Box flexDirection="row">
+          {fx && <Text color={C.hi} backgroundColor={C.bg} bold>{` ${fx} `}</Text>}
+          {e.props.isWorking ? (
+            <Text color={C.warn} backgroundColor={C.bg} wrap="truncate">
+              {` RUN ${running ? `${running.tool.toUpperCase()} ${running.detail}` : ''}`.trimEnd() + '…'}
+            </Text>
+          ) : (
+            <Text color={C.fg} backgroundColor={C.bg}>{' READY.'}</Text>
+          )}
+        </Box>
         {strip}
         {!strip && !e.props.isWorking && (
           <Text color={cursor ? C.fg : C.bg} backgroundColor={C.bg}>{' █'}</Text>
