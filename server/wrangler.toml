@@ -6,5 +6,5 @@ compatibility_date = "2026-10-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "claude-pets-board"
-# `npm run db:create` prints this id; paste it here (it is an identifier, not a secret).
-database_id = "REPLACE_WITH_THE_ID_FROM_wrangler_d1_create"
+# From `npm run db:create` (an identifier, not a secret). Forks: create your own and replace it.
+database_id = "2bc293fe-a386-4ca6-af75-bfea4fd093db"

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 — 2026-10-11
+
+- **The world board is live.** It's at `claude-pets-board.claude-pets-leaderboard.workers.dev`, with its GitHub sign-in app built in as the default, so `/pet join` works straight after install. It's still opt-in: nothing is sent until you join, `/pet leave` deletes your entry, and emptying the `leaderboardUrl` setting turns it off.
+
 ## 1.2.0 — 2026-10-11
 
 For everyone, not just developers ([backlog](docs/backlog/BACKLOG.md): E1–E3).

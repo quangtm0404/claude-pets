@@ -693,7 +693,7 @@ function boardApi(on: On) {
   return calls
 }
 
-test('E4-S02: with no board set up, /pet join says so and sends nothing', async ($, on) => {
+test('E4-S02: with the board turned off, /pet join says so and sends nothing', { options: { leaderboardUrl: '' } } as never, async ($, on) => {
   repo(on, {})
   const calls = boardApi(on)
   const ran = await $.command.run(run('pet', 'join'))
@@ -702,6 +702,7 @@ test('E4-S02: with no board set up, /pet join says so and sends nothing', async 
 })
 
 test('E4-S02: /pet join starts the GitHub device flow with no scopes', { options: BOARD } as never, async ($, on) => {
+  on('clock.after', () => ({ value: { cancel: () => undefined } }) as never)
   repo(on, {})
   const calls = boardApi(on)
   const ran = await $.command.run(run('pet', 'join'))
@@ -734,4 +735,13 @@ test('E4-S04/S02: /pet board world shows the board; /pet leave deletes the entry
   expect(left.text).toContain("Left the board: alice's entry is deleted")
   expect(calls.some(c => c.url === 'https://board.test/v1/me' && c.method === 'DELETE')).toBe(true)
   expect(store.board).toBe(null)
+})
+
+test('1.2.1: the public board is the default, so /pet join works straight after install', async ($, on) => {
+  repo(on, {})
+  const calls = boardApi(on)
+  on('clock.after', () => ({ value: { cancel: () => undefined } }) as never)
+  const ran = await $.command.run(run('pet', 'join'))
+  expect(ran.text).toContain('Open https://github.com/login/device and enter:')
+  expect(calls[0]?.body).toBe('client_id=Ov23liHlgyFS3sCQIQ3l&scope=')
 })

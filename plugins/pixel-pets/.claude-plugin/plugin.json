@@ -1,6 +1,6 @@
 {
   "name": "pixel-pets",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code, with plan usage, your backlog story and branch, pet voices and guardrails",
   "author": {
     "name": "quangtm0404"
@@ -95,14 +95,14 @@
     "leaderboardUrl": {
       "type": "string",
       "title": "Shared leaderboard URL",
-      "description": "The leaderboard service (see server/README.md); empty means no shared board and nothing sent. Joining is still opt-in: /pet join",
-      "default": ""
+      "description": "The world board service (see server/README.md). Joining is still opt-in: nothing is sent until /pet join. Empty this to turn the world board off",
+      "default": "https://claude-pets-board.claude-pets-leaderboard.workers.dev"
     },
     "githubClientId": {
       "type": "string",
       "title": "Leaderboard GitHub app",
       "description": "The leaderboard's GitHub OAuth app Client ID (public by design; used for /pet join's device sign-in)",
-      "default": ""
+      "default": "Ov23liHlgyFS3sCQIQ3l"
     }
   }
 }

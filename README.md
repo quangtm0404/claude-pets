@@ -81,7 +81,7 @@ Your name comes from the `playerName` setting, else git's `user.name`, else your
 ### The world board (opt-in)
 `/pet join` puts you on a shared leaderboard: it shows a GitHub sign-in code (no permissions requested), and once you approve it your score is sent after each turn, at most once a minute. `/pet board world` shows the top 20 and your rank; `/pet leave` deletes your entry. Only your GitHub login, level, XP, favourite pet and streak are shared, and only a hash of the board's own key is stored; your GitHub token is never kept.
 
-The board is a small service you (or the plugin's publisher) run on Cloudflare: see [server/README.md](server/README.md). Until the `leaderboardUrl` and `githubClientId` settings point at one, there is no world board and nothing is sent.
+The board runs at `https://claude-pets-board.claude-pets-leaderboard.workers.dev` (a Cloudflare Worker; the code is in [server/](server/README.md)). Nothing is sent until you run `/pet join`. To turn the world board off entirely, empty the `leaderboardUrl` setting. To run your own, follow [server/README.md](server/README.md) and point the two settings at it.
 
 ### Guardrails
 - **Generated files**: Claude's edits to files marked `@generated`, `DO NOT EDIT` or "generated from … regenerate" are refused, pointing back at their source.
@@ -110,8 +110,8 @@ Change them in `/config` under pixel-pets, or in `settings.json` under `pluginCo
 | `weatherPlace` | *(empty)* | A city for the weather; empty means no weather and no requests |
 | `temperatureUnit` | `both` | `c`, `f` or `both` |
 | `playerName` | *(empty)* | Your name on `/pet board` |
-| `leaderboardUrl` | *(empty)* | The world board's service; empty means none |
-| `githubClientId` | *(empty)* | The world board's GitHub app, for `/pet join` |
+| `leaderboardUrl` | the public board | The world board's service; empty turns it off |
+| `githubClientId` | the public board's app | The world board's GitHub app, for `/pet join` |
 
 ### Backlog formats
 Claude Pets understands two markdown shapes; the first match wins.

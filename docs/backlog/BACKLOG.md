@@ -124,9 +124,9 @@ So that the weather feels part of the game.
 
 </details>
 
-## P2 · Playing together - 🟡 In progress
+## P2 · Playing together - ✅ Done
 
-### E3 · Your profile and a leaderboard - 🟡 In progress
+### E3 · Your profile and a leaderboard - ✅ Done
 
 **Outcome.** Progress means something over time, and every pet you raise has its own record.
 
@@ -178,7 +178,7 @@ So that coming back each day, and playing well, is rewarded.
 
 </details>
 
-<details><summary><b>E3-S04</b> - as a <b>player</b>, I want <b>to compare scores with friends on a shared leaderboard</b> · 🟡 In progress · 8 pts</summary>
+<details><summary><b>E3-S04</b> - as a <b>player</b>, I want <b>to compare scores with friends on a shared leaderboard</b> · ✅ Done · 8 pts</summary>
 
 So that it is a game you can play together.
 
@@ -196,15 +196,17 @@ Open questions: cheating (scores are computed on the player's machine), moderati
 | Task | Kind | Status |
 |---|---|---|
 | Choose an approach | technical | ✅ Done |
-| Build it (E4) | technical | 🟡 In progress |
+| Build it (E4) | technical | ✅ Done |
 
 **Decided 2026-10-11:** option 2, a hosted API on Cloudflare Workers with a D1 database. Built as E4 below.
 
 </details>
 
-### E4 · Shared leaderboard - 🟡 In progress
+### E4 · Shared leaderboard - ✅ Done
 
 **Outcome.** Players who opt in see where they stand among everyone else, and nothing else about them leaves their machine.
+
+**Live** at `https://claude-pets-board.claude-pets-leaderboard.workers.dev` since 2026-10-11.
 
 **Architecture.** A Cloudflare Worker (`server/`) with one D1 table. A player signs in with GitHub's device flow, asking for no scopes. The Worker confirms the login once with GitHub, then issues its own API key; only a hash of that key is stored, and the GitHub token is discarded. Scores are self-reported, so the Worker checks they are possible. Nothing is sent until `/pet join`, and `/pet leave` deletes the row.
 
@@ -270,7 +272,7 @@ So that I can check my rank without leaving Claude Code.
 
 </details>
 
-<details><summary><b>E4-S05</b> - as the <b>owner</b>, I want <b>to deploy the service in a few commands</b> · 🟡 In progress · 2 pts</summary>
+<details><summary><b>E4-S05</b> - as the <b>owner</b>, I want <b>to deploy the service in a few commands</b> · ✅ Done · 2 pts</summary>
 
 So that the board can go live under my Cloudflare account.
 
@@ -281,6 +283,6 @@ So that the board can go live under my Cloudflare account.
 | Task | Kind | Status |
 |---|---|---|
 | wrangler.toml, schema migration and the deploy guide | technical | ✅ Done |
-| Deploy to the owner's account | deployment | ⬜ To do (owner) |
+| Deploy to the owner's account | deployment | ✅ Done (live 2026-10-11) |
 
 </details>

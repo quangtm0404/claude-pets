@@ -9,7 +9,7 @@
       "name": "pixel-pets",
       "source": "./plugins/pixel-pets",
       "description": "A pixel pet game and retro dashboard for Claude Code: plan usage, backlog story, branch, pet voices and guardrails",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "category": "productivity"
     }
   ]
