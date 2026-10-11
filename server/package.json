@@ -1,0 +1,15 @@
+{
+  "name": "claude-pets-leaderboard",
+  "private": true,
+  "type": "module",
+  "description": "The shared leaderboard for Claude Pets: a Cloudflare Worker over one D1 table",
+  "scripts": {
+    "test": "node --test test/worker.test.ts test/contract.test.ts",
+    "db:create": "wrangler d1 create claude-pets-board",
+    "db:migrate": "wrangler d1 execute claude-pets-board --remote --file=schema.sql",
+    "deploy": "wrangler deploy"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

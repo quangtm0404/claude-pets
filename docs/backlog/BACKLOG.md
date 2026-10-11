@@ -178,7 +178,7 @@ So that coming back each day, and playing well, is rewarded.
 
 </details>
 
-<details><summary><b>E3-S04</b> - as a <b>player</b>, I want <b>to compare scores with friends on a shared leaderboard</b> · 💡 Proposed · 8 pts</summary>
+<details><summary><b>E3-S04</b> - as a <b>player</b>, I want <b>to compare scores with friends on a shared leaderboard</b> · 🟡 In progress · 8 pts</summary>
 
 So that it is a game you can play together.
 
@@ -195,6 +195,92 @@ Open questions: cheating (scores are computed on the player's machine), moderati
 
 | Task | Kind | Status |
 |---|---|---|
-| Choose an approach | technical | 💡 Proposed |
+| Choose an approach | technical | ✅ Done |
+| Build it (E4) | technical | 🟡 In progress |
+
+**Decided 2026-10-11:** option 2, a hosted API on Cloudflare Workers with a D1 database. Built as E4 below.
+
+</details>
+
+### E4 · Shared leaderboard - 🟡 In progress
+
+**Outcome.** Players who opt in see where they stand among everyone else, and nothing else about them leaves their machine.
+
+**Architecture.** A Cloudflare Worker (`server/`) with one D1 table. A player signs in with GitHub's device flow, asking for no scopes. The Worker confirms the login once with GitHub, then issues its own API key; only a hash of that key is stored, and the GitHub token is discarded. Scores are self-reported, so the Worker checks they are possible. Nothing is sent until `/pet join`, and `/pet leave` deletes the row.
+
+<details><summary><b>E4-S01</b> - as a <b>player</b>, I want <b>a board service that keeps only what the board shows</b> · ✅ Done · 5 pts</summary>
+
+So that joining shares my name, level, XP, favourite pet and streak, and nothing more.
+
+**Acceptance criteria**
+- One table: GitHub id and login, a hash of the API key, XP, level, favourite pet, streak, best streak, and times
+- `GET /v1/board` returns the top players by XP, with rank, and the caller's own rank when signed in
+- `DELETE /v1/me` removes the caller's row entirely
+
+| Task | Kind | Status |
+|---|---|---|
+| Worker, schema and endpoints | technical | ✅ Done |
+| Endpoints against real SQL (node:sqlite) | testing | ✅ Done (8 tests) |
+
+</details>
+
+<details><summary><b>E4-S02</b> - as a <b>player</b>, I want <b>to join with my GitHub account, only when I choose to</b> · 🟡 In progress · 5 pts</summary>
+
+So that my place on the board is mine, and nothing is shared before I say so.
+
+**Acceptance criteria**
+- `/pet join` starts GitHub's device flow (a code to enter at github.com/login/device), asking for no scopes
+- The Worker checks the token with GitHub once, then returns its own API key; the GitHub token is never stored
+- `/pet leave` deletes the row and forgets the key; with no leaderboard set up, both say so and send nothing
+
+| Task | Kind | Status |
+|---|---|---|
+| Device flow in the plugin; `/v1/join` in the Worker | technical | ✅ Done |
+| Join, bad token and leave asserted | testing | 🟡 In progress (Worker side passing; plugin side written, not yet run) |
+
+</details>
+
+<details><summary><b>E4-S03</b> - as a <b>player</b>, I want <b>my score sent for me, and impossible scores refused</b> · 🟡 In progress · 3 pts</summary>
+
+So that the board stays current without effort, and stays fair enough.
+
+**Acceptance criteria**
+- After a turn, a joined player's score is sent, at most once a minute
+- The Worker refuses a level that doesn't match the XP, XP that drops, XP rising faster than 600 an hour, a streak growing faster than the days that passed, and unknown pets
+- A refused or failed send is not retried in a loop and never interrupts the session
+
+| Task | Kind | Status |
+|---|---|---|
+| Sync after turns; plausibility checks and a per-key rate limit | technical | ✅ Done |
+| Each refusal asserted | testing | 🟡 In progress (Worker side passing; plugin sync written, not yet run) |
+
+</details>
+
+<details><summary><b>E4-S04</b> - as a <b>player</b>, I want <b>to see the world board in the terminal</b> · 🟡 In progress · 2 pts</summary>
+
+So that I can check my rank without leaving Claude Code.
+
+**Acceptance criteria**
+- `/pet board world` shows the top 20 and, if I'm not among them, my own rank under them
+- My own row is marked
+
+| Task | Kind | Status |
+|---|---|---|
+| Fetch and format the board | technical | ✅ Done (format checked; in-engine test written, not yet run) |
+
+</details>
+
+<details><summary><b>E4-S05</b> - as the <b>owner</b>, I want <b>to deploy the service in a few commands</b> · 🟡 In progress · 2 pts</summary>
+
+So that the board can go live under my Cloudflare account.
+
+**Acceptance criteria**
+- `server/README.md` lists every step: the GitHub OAuth app, the D1 database, the migration, `wrangler deploy`, and the plugin settings
+- Nothing in the repo is a secret: the OAuth app's client id is public by design for the device flow
+
+| Task | Kind | Status |
+|---|---|---|
+| wrangler.toml, schema migration and the deploy guide | technical | ✅ Done |
+| Deploy to the owner's account | deployment | ⬜ To do (owner) |
 
 </details>

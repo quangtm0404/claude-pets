@@ -76,7 +76,12 @@ The pet's strip shows the same sky: the sun by day, the moon and stars at night,
 
 `FIRST COIN · BUG SQUASHER · PACK LEADER · GREEN STREAK · A WEEK'S STREAK · LEVEL 5 · LEVEL 10 · ZOO KEEPER`
 
-Your name comes from the `playerName` setting, else git's `user.name`, else your OS user. A shared online leaderboard is proposed in [the backlog](docs/backlog/BACKLOG.md) (E3-S04) but not built: it needs a server, and it would have to be strictly opt-in.
+Your name comes from the `playerName` setting, else git's `user.name`, else your OS user.
+
+### The world board (opt-in)
+`/pet join` puts you on a shared leaderboard: it shows a GitHub sign-in code (no permissions requested), and once you approve it your score is sent after each turn, at most once a minute. `/pet board world` shows the top 20 and your rank; `/pet leave` deletes your entry. Only your GitHub login, level, XP, favourite pet and streak are shared, and only a hash of the board's own key is stored; your GitHub token is never kept.
+
+The board is a small service you (or the plugin's publisher) run on Cloudflare: see [server/README.md](server/README.md). Until the `leaderboardUrl` and `githubClientId` settings point at one, there is no world board and nothing is sent.
 
 ### Guardrails
 - **Generated files**: Claude's edits to files marked `@generated`, `DO NOT EDIT` or "generated from … regenerate" are refused, pointing back at their source.
@@ -105,6 +110,8 @@ Change them in `/config` under pixel-pets, or in `settings.json` under `pluginCo
 | `weatherPlace` | *(empty)* | A city for the weather; empty means no weather and no requests |
 | `temperatureUnit` | `both` | `c`, `f` or `both` |
 | `playerName` | *(empty)* | Your name on `/pet board` |
+| `leaderboardUrl` | *(empty)* | The world board's service; empty means none |
+| `githubClientId` | *(empty)* | The world board's GitHub app, for `/pet join` |
 
 ### Backlog formats
 Claude Pets understands two markdown shapes; the first match wins.
@@ -167,6 +174,7 @@ Everything stays local: the backlog files, git and the transcript are read on yo
 
 - **Weather**: once you set a place, its name goes to Open-Meteo's geocoding once, and its coordinates go to Open-Meteo's forecast every 15 minutes. With no place set, nothing is sent.
 - **`/weather here`**: your IP address goes to ipapi.co to find your place, only when you run it.
+- **World board**: after `/pet join`, your GitHub login, level, XP, favourite pet and streak go to the board's service; `/pet leave` deletes them.
 - **`/standup64`**: the session's facts and its last few messages go to a Haiku model through your own Claude Code session.
 
 ## Development

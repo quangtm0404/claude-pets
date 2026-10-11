@@ -668,3 +668,68 @@ test('E3-S02: each animal keeps its own XP on the board', async ($, on) => {
   expect(board.text).toMatch(/1\. ★ 🐳 Pixel the whale\s+LV1\s+4 XP {2}← now/)
   expect(board.text).toMatch(/2\. {3}🐈 cat\s+LV1\s+2 XP/)
 })
+
+// ── E4: the shared leaderboard, from the plugin's side ───────────────────────
+const BOARD = { leaderboardUrl: 'https://board.test', githubClientId: 'Iv1.test' }
+
+function boardApi(on: On) {
+  const calls: { url: string; method: string; body?: string; auth?: string }[] = []
+  on('http.fetch', (_$, e) => {
+    const { url, init } = e as { url: string; init?: { method?: string; body?: string; headers?: Record<string, string> } }
+    calls.push({ url, method: init?.method ?? 'GET', body: init?.body, auth: init?.headers?.authorization })
+    const reply = (status: number, body: unknown) => ({ value: { status, ok: status < 300, headers: {}, text: JSON.stringify(body) } }) as never
+    if (url === 'https://github.com/login/device/code') {
+      return reply(200, { device_code: 'dc1', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device', interval: 5, expires_in: 900 })
+    }
+    if (url === 'https://board.test/v1/board?limit=20') {
+      return reply(200, { top: [{ rank: 1, login: 'bob', level: 8, xp: 900, favPet: 'cat', streak: 2, bestStreak: 4 }], me: null })
+    }
+    if (url === 'https://board.test/v1/score') return reply(200, { rank: 3 })
+    if (url === 'https://board.test/v1/me') return { value: { status: 204, ok: true, headers: {}, text: '' } } as never
+    return reply(404, {})
+  })
+  return calls
+}
+
+test('E4-S02: with no board set up, /pet join says so and sends nothing', async ($, on) => {
+  repo(on, {})
+  const calls = boardApi(on)
+  const ran = await $.command.run(run('pet', 'join'))
+  expect(ran.text).toContain('No shared leaderboard is set up')
+  expect(calls.length).toBe(0)
+})
+
+test('E4-S02: /pet join starts the GitHub device flow with no scopes', { options: BOARD } as never, async ($, on) => {
+  repo(on, {})
+  const calls = boardApi(on)
+  const ran = await $.command.run(run('pet', 'join'))
+  expect(ran.text).toContain('Open https://github.com/login/device and enter: ABCD-1234')
+  expect(ran.text).toContain('never your GitHub token')
+  expect(calls[0]?.url).toBe('https://github.com/login/device/code')
+  expect(calls[0]?.body).toBe('client_id=Iv1.test&scope=')
+})
+
+test('E4-S03: a joined player\'s score is sent after a turn, with exactly the board fields', { options: BOARD } as never, async ($, on) => {
+  const store = repo(on, {})
+  store.board = { url: 'https://board.test', login: 'alice', apiKey: 'cp_' + 'a'.repeat(64) }
+  const calls = boardApi(on)
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't', reason: 'answer' } as never)
+  const put = calls.find(c => c.url === 'https://board.test/v1/score')
+  expect(put?.method).toBe('PUT')
+  expect(put?.auth).toBe('Bearer cp_' + 'a'.repeat(64))
+  expect(JSON.parse(put?.body ?? '{}')).toEqual({ xp: 2, level: 1, favPet: 'cat', streak: 1, bestStreak: 1 })
+})
+
+test('E4-S04/S02: /pet board world shows the board; /pet leave deletes the entry and forgets the key', { options: BOARD } as never, async ($, on) => {
+  const store = repo(on, {})
+  store.board = { url: 'https://board.test', login: 'alice', apiKey: 'cp_' + 'a'.repeat(64) }
+  const calls = boardApi(on)
+  const world = await $.command.run(run('pet', 'board world'))
+  expect(world.text).toContain('WORLD BOARD')
+  expect(world.text).toMatch(/1\. {3}bob\s+LV8\s+900 XP/)
+  const left = await $.command.run(run('pet', 'leave'))
+  expect(left.text).toContain("Left the board: alice's entry is deleted")
+  expect(calls.some(c => c.url === 'https://board.test/v1/me' && c.method === 'DELETE')).toBe(true)
+  expect(store.board).toBe(null)
+})

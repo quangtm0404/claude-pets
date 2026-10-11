@@ -1,0 +1,10 @@
+# Claude Pets shared leaderboard (E4). Deploy steps: see README.md beside this file.
+name = "claude-pets-board"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "claude-pets-board"
+# `npm run db:create` prints this id; paste it here (it is an identifier, not a secret).
+database_id = "REPLACE_WITH_THE_ID_FROM_wrangler_d1_create"

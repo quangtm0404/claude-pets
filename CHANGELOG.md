@@ -6,7 +6,8 @@ For everyone, not just developers ([backlog](docs/backlog/BACKLOG.md): E1–E3).
 
 - **Rows you choose** (E1): the `bandRows` setting picks the band's rows and their order. The story row only shows when something is tracked, so non-developers never see backlog prompts. Short terminals drop rows by importance and keep the pet.
 - **Weather** (E2): `/weather <city>`, `/weather here` (opt-in IP lookup) and `/weather off`; °C, °F or both. The sky in the pet's strip matches the weather (sun, moon and stars, clouds, rain, snow, fog, storm, wind), and the pet reacts to it. Nothing is fetched until a place is set.
-- **Profile and pet board** (E3): lifetime totals, XP per animal, `/pet board`, daily streaks and eight achievements. A shared online leaderboard is proposed (E3-S04), not built.
+- **Profile and pet board** (E3): lifetime totals, XP per animal, `/pet board`, daily streaks and eight achievements.
+- **World board** (E4): an opt-in shared leaderboard. `/pet join` (GitHub device sign-in, no scopes), `/pet board world` and `/pet leave`, backed by a Cloudflare Worker and D1 service in `server/` with plausibility checks. It's off until its settings point at a deployed service.
 
 ## 1.1.1 — 2026-10-11
 

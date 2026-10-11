@@ -91,6 +91,18 @@
       "title": "Player name",
       "description": "Your name on /pet board; empty means git's user.name, else your OS user",
       "default": ""
+    },
+    "leaderboardUrl": {
+      "type": "string",
+      "title": "Shared leaderboard URL",
+      "description": "The leaderboard service (see server/README.md); empty means no shared board and nothing sent. Joining is still opt-in: /pet join",
+      "default": ""
+    },
+    "githubClientId": {
+      "type": "string",
+      "title": "Leaderboard GitHub app",
+      "description": "The leaderboard's GitHub OAuth app Client ID (public by design; used for /pet join's device sign-in)",
+      "default": ""
     }
   }
 }

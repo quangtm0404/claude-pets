@@ -202,6 +202,9 @@ const CFG = {
   weatherPlace: '',
   /** The name on the pet board (E3-S01); empty means git's user.name, else the OS user. */
   playerName: '',
+  /** The shared leaderboard (E4): its Worker URL and GitHub OAuth app; empty means no shared board. */
+  leaderboardUrl: '',
+  githubClientId: '',
 }
 
 export function configure(options: PluginOptions) {
@@ -223,6 +226,8 @@ export function configure(options: PluginOptions) {
   CFG.temperatureUnit = unit === 'c' || unit === 'f' ? unit : 'both'
   CFG.weatherPlace = str('weatherPlace')
   CFG.playerName = str('playerName').slice(0, 32)
+  CFG.leaderboardUrl = str('leaderboardUrl').replace(/\/+$/, '')
+  CFG.githubClientId = str('githubClientId')
   const kind = str('petKind')
   if (isPetKind(kind)) CFG.petKind = kind
 }
@@ -1234,6 +1239,114 @@ export function boardText(p: Profile, name: string, current: { kind: PetKind; na
   ].join('\n')
 }
 
+// ── Shared leaderboard (E4): opt-in, via the service in server/ ─────────────
+type BoardLink = { url: string; login: string; apiKey: string }
+type WorldRow = { rank: number; login: string; level: number; xp: number; favPet: string; streak: number; bestStreak: number }
+const SYNC_GAP_MS = 60_000
+const boardSync = { lastAt: 0, isOff: false, isJoining: false }
+
+async function readLink($: EngineInterface): Promise<BoardLink | null> {
+  const v = (await $.store.get('board')) as Partial<BoardLink> | null | undefined
+  return v && typeof v.apiKey === 'string' && typeof v.url === 'string' && typeof v.login === 'string' ? (v as BoardLink) : null
+}
+
+const boardReady = () => Boolean(CFG.leaderboardUrl && CFG.githubClientId)
+const NOT_SET_UP = 'No shared leaderboard is set up for this plugin (the leaderboardUrl and githubClientId settings), so nothing is sent. server/README.md shows how to run one.'
+
+/** The profile as the board sees it: lifetime XP and level, the favourite pet, the streak. */
+async function boardScore($: EngineInterface) {
+  const p = await readProfile($)
+  const fav = Object.entries(p.byKind).sort((a, b) => b[1] - a[1])[0]?.[0] ?? (await readPet($)).kind
+  return { xp: p.totals.xp, level: levelOf(p.totals.xp), favPet: fav, streak: p.streak.days, bestStreak: Math.max(p.streak.best, p.streak.days) }
+}
+
+/** Sends a joined player's score, at most once a minute; a refusal stops it for the session (E4-S03). */
+async function syncScore($: EngineInterface, force = false) {
+  const link = await readLink($)
+  if (!link || boardSync.isOff) return
+  const now = await $.clock.now()
+  if (!force && now - boardSync.lastAt < SYNC_GAP_MS) return
+  boardSync.lastAt = now
+  try {
+    const r = await $.http.fetch(`${link.url}/v1/score`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${link.apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify(await boardScore($)),
+    })
+    if (r.status === 401) {
+      await $.store.set('board', null)
+      $.ui.toast('▶ THE BOARD NO LONGER KNOWS THIS KEY · /pet join TO REJOIN', { timeoutMs: 8000 })
+    } else if (r.status === 400 || r.status === 422) {
+      boardSync.isOff = true
+      $.ui.log(`pixel-pets: the board refused this score (${r.text.slice(0, 160)}); not sending again this session`)
+    }
+  } catch {
+    // offline: try again after the next turn
+  }
+}
+
+type DeviceCode = { device_code: string; user_code: string; verification_uri: string; interval: number; expires_in: number }
+
+/** Polls GitHub until the person approves the code, then joins the board with the token (E4-S02). */
+async function pollDevice($: EngineInterface, flow: DeviceCode, until: number, intervalMs: number) {
+  const now = await $.clock.now()
+  if (now > until) {
+    boardSync.isJoining = false
+    $.ui.toast('▶ THE GITHUB CODE EXPIRED · /pet join TO TRY AGAIN', { timeoutMs: 8000 })
+    return
+  }
+  let next = intervalMs
+  try {
+    const r = await $.http.fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+      body: `client_id=${encodeURIComponent(CFG.githubClientId)}&device_code=${encodeURIComponent(flow.device_code)}&grant_type=urn:ietf:params:oauth:grant-type:device_code`,
+    })
+    const d = JSON.parse(r.text) as { access_token?: string; error?: string; interval?: number }
+    if (d.access_token) {
+      const joined = await $.http.fetch(`${CFG.leaderboardUrl}/v1/join`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ githubToken: d.access_token }),
+      })
+      boardSync.isJoining = false
+      // the GitHub token goes no further than this: only the board's own key is kept
+      if (!joined.ok) {
+        $.ui.toast(`▶ THE BOARD REFUSED THE SIGN-IN (${joined.status})`, { timeoutMs: 8000 })
+        return
+      }
+      const j = JSON.parse(joined.text) as { login: string; apiKey: string }
+      await $.store.set('board', { url: CFG.leaderboardUrl, login: j.login, apiKey: j.apiKey })
+      boardSync.isOff = false
+      $.ui.toast(`▶ JOINED THE BOARD AS ${j.login.toUpperCase()} · /pet board world`, { timeoutMs: 8000 })
+      void petVoice($)
+      await syncScore($, true)
+      return
+    }
+    if (d.error === 'access_denied' || d.error === 'expired_token') {
+      boardSync.isJoining = false
+      $.ui.toast(d.error === 'access_denied' ? '▶ SIGN-IN CANCELLED · NOTHING WAS SHARED' : '▶ THE GITHUB CODE EXPIRED', { timeoutMs: 8000 })
+      return
+    }
+    if (d.error === 'slow_down') next = intervalMs + 5000
+  } catch {
+    // a network blip: keep polling until the code expires
+  }
+  $.clock.after(next, () => void pollDevice($, flow, until, next))
+}
+
+/** /pet board world: the top 20, and my own rank under them when I'm further down (E4-S04). */
+export function worldText(top: WorldRow[], me: WorldRow | null, joinedAs: string | null): string {
+  const row = (r: WorldRow) => {
+    const mine = joinedAs !== null && r.login === joinedAs
+    return ` ${String(r.rank).padStart(3)}. ${mine ? '★' : ' '} ${r.login.padEnd(20)} LV${String(r.level).padEnd(3)} ${String(r.xp).padStart(7)} XP  ${PETS[r.favPet as PetKind]?.emoji ?? '?'}  ${r.streak}-day streak`
+  }
+  const lines = ['WORLD BOARD', ...(top.length ? top.map(row) : ['   nobody has scored yet'])]
+  if (me && !top.some(r => r.login === me.login)) lines.push('   …', row(me))
+  if (!joinedAs) lines.push('', '/pet join puts you on it (GitHub sign-in; only name, level, XP, favourite pet and streak are shared).')
+  return lines.join('\n')
+}
+
 /** The plan's fuller window drives the mood; a worse mood is announced once, in its voice. */
 async function setLimit($: EngineInterface, u: Usage) {
   const windows = [
@@ -1766,7 +1879,7 @@ const COMMANDS: { name: string; description: string }[] = [
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
-    description: 'An 8-bit pet game in the band: /pet (show/hide) · /pet board · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
+    description: 'An 8-bit pet game in the band: /pet (show/hide) · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
   },
   // not `standup`: other plugins commonly own that name
   { name: 'standup64', description: 'Three-line standup (Done / Next / Blockers) from this session, copied to the clipboard' },
@@ -1889,6 +2002,46 @@ export const register: Register = (on, options) => {
       await throwBall($)
     } else if (/^pat$/i.test(args)) {
       await patPet($)
+    } else if (/^join$/i.test(args)) {
+      if (!boardReady()) return { text: NOT_SET_UP }
+      const link = await readLink($)
+      if (link) return { text: `Already on the board as ${link.login}. /pet board world shows it; /pet leave removes you.` }
+      if (boardSync.isJoining) return { text: 'Already waiting for you to approve the code at github.com/login/device.' }
+      const r = await $.http.fetch('https://github.com/login/device/code', {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+        body: `client_id=${encodeURIComponent(CFG.githubClientId)}&scope=`,
+      }).catch(() => null)
+      if (!r || !r.ok) return { text: `Could not reach GitHub to start the sign-in${r ? ` (${r.status})` : ''}.` }
+      const flow = JSON.parse(r.text) as DeviceCode
+      boardSync.isJoining = true
+      const now = await $.clock.now()
+      $.clock.after(flow.interval * 1000, () => void pollDevice($, flow, now + flow.expires_in * 1000, flow.interval * 1000))
+      return {
+        text: [
+          `Open ${flow.verification_uri} and enter: ${flow.user_code}`,
+          'GitHub will ask to share your public profile only (no scopes). Claude Pets finishes joining once you approve, and keeps only the board\'s own key, never your GitHub token.',
+          'Shared: your GitHub login, level, XP, favourite pet and streak. /pet leave deletes it all.',
+        ].join('\n'),
+      }
+    } else if (/^leave$/i.test(args)) {
+      const link = await readLink($)
+      if (!link) return { text: 'You are not on the shared board.' }
+      const r = await $.http.fetch(`${link.url}/v1/me`, { method: 'DELETE', headers: { authorization: `Bearer ${link.apiKey}` } }).catch(() => null)
+      await $.store.set('board', null)
+      return {
+        text: r && (r.status === 204 || r.status === 401)
+          ? `Left the board: ${link.login}'s entry is deleted, and nothing more will be sent.`
+          : 'Forgot the board key here, but could not reach the board to delete your entry; /pet join and /pet leave again later to remove it.',
+      }
+    } else if (/^board\s+world$/i.test(args)) {
+      const link = await readLink($)
+      const url = link?.url ?? CFG.leaderboardUrl
+      if (!url) return { text: NOT_SET_UP }
+      const r = await $.http.fetch(`${url}/v1/board?limit=20`, link ? { headers: { authorization: `Bearer ${link.apiKey}` } } : undefined).catch(() => null)
+      if (!r || !r.ok) return { text: `Could not reach the board${r ? ` (${r.status})` : ''}.` }
+      const d = JSON.parse(r.text) as { top: WorldRow[]; me: WorldRow | null }
+      return { text: worldText(d.top, d.me, link?.login ?? null) }
     } else if (/^(board|leaderboard|profile)$/i.test(args)) {
       return { text: boardText(await readProfile($), await playerName($), await readPet($)) }
     } else if (/^(stats|status|xp)$/i.test(args)) {
@@ -1913,7 +2066,7 @@ export const register: Register = (on, options) => {
         text: shown ? `${pet.name} the ${pet.kind} joins the band. READY.` : `${pet.name} is resting. /pet brings them back.`,
       }
     } else {
-      return { text: 'Usage: /pet (show/hide) · /pet board · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
+      return { text: 'Usage: /pet (show/hide) · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
     }
     await update($, petShown, () => true)
     const pet = await readPet($)
@@ -2099,6 +2252,7 @@ export const register: Register = (on, options) => {
       void refreshStatus($)
       void refreshGit($)
       if (!e.isAborted) await gainXp($, 2, 'turn')
+      void syncScore($)
       if (!e.isAborted && e.durationMs >= DONE_SOUND_AFTER_MS) {
         $.ui.toast(`▶ DONE IN ${fmtDuration(e.durationMs)}. READY.`, { timeoutMs: 6000 })
         void petVoice($)
