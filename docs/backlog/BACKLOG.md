@@ -358,3 +358,220 @@ So that the banner looks the way I like.
 | Each style and the pixel banner asserted | testing | ✅ Done |
 
 </details>
+
+## P4 · Play, share and seasons - ⬜ To do
+
+### E6 · Play - ⬜ To do
+
+**Outcome.** Waiting for Claude becomes the fun part, and coins buy something worth having.
+
+<details><summary><b>E6-S01</b> - as a <b>player</b>, I want <b>a tiny game to play while Claude is thinking</b> · ⬜ To do · 8 pts</summary>
+
+So that a long turn is something to look forward to, not stare at.
+
+**Acceptance criteria**
+- During a long turn the band offers a runner game: the pet jumps over bugs, with the arrow keys or space
+- It runs in the terminal and the desktop app; where it can't (VS Code), the band says so instead
+- Each bug cleared scores; a run's best score adds XP, at most 20 XP per turn so it can't be farmed
+- The game never takes the keys from the prompt unless the person starts it, and Esc hands them back
+- When the turn ends the game pauses and the score is kept
+
+| Task | Kind | Status |
+|---|---|---|
+| Runner game as a Client module with its own frame clock | technical | ⬜ To do |
+| Score to XP with a per-turn cap | technical | ⬜ To do |
+| Keys, pause on turn end, XP cap asserted | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E6-S02</b> - as a <b>player</b>, I want <b>to spend my coins on things for my pet to wear</b> · ⬜ To do · 5 pts</summary>
+
+So that collecting ◆ means something.
+
+**Acceptance criteria**
+- `/pet shop` lists items with prices: hats, scarves, sunglasses, a crown, a Tết lantern, and more
+- `/pet buy <item>` spends coins; `/pet wear <item>` and `/pet wear none` change what it has on
+- Items are drawn on the sprite in cells and in SVG, for every animal, facing either way
+- Coins and owned items are saved across sessions; a coin balance is kept apart from lifetime coins
+
+| Task | Kind | Status |
+|---|---|---|
+| Coin balance, shop catalogue and saves | technical | ⬜ To do |
+| Item overlays per animal in cells and SVG | technical | ⬜ To do |
+| Buying, too few coins, wearing and saving asserted | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E6-S03</b> - as a <b>player</b>, I want <b>my pet to grow up as it levels</b> · ⬜ To do · 5 pts</summary>
+
+So that a long-kept pet looks like one.
+
+**Acceptance criteria**
+- At LV10 the baby becomes an adult, and at LV25 and LV50 it gains a legend look (glow, then wings or a halo)
+- Growing up shows a short animation and a toast, and is never undone by switching animals
+- `/pet stats` shows the stage and the level of the next one
+
+| Task | Kind | Status |
+|---|---|---|
+| Stage art for the roster | technical | ⬜ To do |
+| Stages per level and the switch rule asserted | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E6-S04</b> - as a <b>developer</b>, I want <b>my pet to react to what happens in my work</b> · ⬜ To do · 3 pts</summary>
+
+So that the pet feels part of the session.
+
+**Acceptance criteria**
+- A green test run makes it dance; a failing one makes it wince
+- A successful `git push` sends it up on a little rocket
+- A merge conflict puts a ? over its head until the conflict is resolved
+- A command running over a minute sends it to sleep beside a progress dots bubble
+- Each reaction is short and never covers the HUD
+
+| Task | Kind | Status |
+|---|---|---|
+| Reactions from tool results | technical | ⬜ To do |
+| Each trigger asserted | testing | ⬜ To do |
+
+</details>
+
+### E7 · Share - ⬜ To do
+
+**Outcome.** Your pet can be seen and visited by other people, if you want it to be.
+
+<details><summary><b>E7-S01</b> - as a <b>player</b>, I want <b>a live badge of my pet for my GitHub profile</b> · ⬜ To do · 5 pts</summary>
+
+So that people can see my pet in my README.
+
+**Acceptance criteria**
+- The board service serves `/card/<login>.svg`: the pet, its level, streak and favourite animal, in the player's theme
+- Only players who joined the board have a card, and `/pet leave` removes it
+- It is cached for a few minutes, and `/pet card` prints the Markdown to paste into a README
+- The SVG has no scripts and no external requests
+
+| Task | Kind | Status |
+|---|---|---|
+| Card route on the Worker, with caching | technical | ⬜ To do |
+| `/pet card` command | technical | ⬜ To do |
+| Card content, a left player and the cache asserted | testing | ⬜ To do |
+| Redeploy the Worker | deployment | ⬜ To do |
+
+</details>
+
+<details><summary><b>E7-S02</b> - as a <b>player</b>, I want <b>to visit a friend's pet</b> · ⬜ To do · 5 pts</summary>
+
+So that playing feels shared.
+
+**Acceptance criteria**
+- `/pet visit <github login>` brings that player's pet (animal, level, items) into my band for a minute
+- The two pets greet each other, and both players get a small XP bonus once a day per pair
+- Only players on the board can be visited, and a player can turn visits off
+
+| Task | Kind | Status |
+|---|---|---|
+| Visit route on the Worker and the guest pet in the band | technical | ⬜ To do |
+| Visit, the daily bonus and visits-off asserted | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E7-S03</b> - as a <b>player</b>, I want <b>a diary card at the end of my day</b> · ⬜ To do · 3 pts</summary>
+
+So that I can look back on, and share, what my pet and I did.
+
+**Acceptance criteria**
+- `/pet diary` draws "Pixel's diary" for today: coins, bugs squashed, tests run, helpers sent, the story worked on, and the weather
+- It comes as an SVG card that can be copied, and as plain text
+- Nothing is sent anywhere unless the person shares it themselves
+
+| Task | Kind | Status |
+|---|---|---|
+| Day totals and the diary card | technical | ⬜ To do |
+| Diary content for a sample day asserted | testing | ⬜ To do |
+
+</details>
+
+### E8 · Life and seasons - ⬜ To do
+
+**Outcome.** The pet keeps you company through the day, the week and the year.
+
+<details><summary><b>E8-S01</b> - as a <b>user</b>, I want <b>a focus timer my pet guards</b> · ⬜ To do · 3 pts</summary>
+
+So that I can work in focused blocks.
+
+**Acceptance criteria**
+- `/pet focus 25` starts a timer shown in the band; the pet sits on guard while it runs
+- A soft chime and a toast mark the end, with XP for each completed session; `/pet focus stop` ends it early with no XP
+- The timer survives a plugin reload
+
+| Task | Kind | Status |
+|---|---|---|
+| Focus timer, band row and XP | technical | ⬜ To do |
+| Start, finish, stop and reload asserted | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E8-S02</b> - as a <b>user</b>, I want <b>gentle reminders to stretch and drink water</b> · ⬜ To do · 2 pts</summary>
+
+So that long sessions don't wear me out.
+
+**Acceptance criteria**
+- After a set time of continuous work (default 60 minutes) the pet stretches and suggests a break, at most once an hour
+- A `breaks` setting turns it off or changes the interval
+- Reminders never interrupt a running turn
+
+| Task | Kind | Status |
+|---|---|---|
+| Activity timer and the reminder | technical | ⬜ To do |
+| Interval, once-an-hour and off asserted | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E8-S03</b> - as a <b>user</b>, I want <b>seasons and local festivals in the band</b> · ⬜ To do · 5 pts</summary>
+
+So that the band changes with the year.
+
+**Acceptance criteria**
+- Lanterns at Tết, mooncakes at Mid-Autumn, snow and a tree at Christmas, fireworks at New Year
+- Lunar dates are worked out for the year, not hard-coded
+- A `festivals` setting turns them off
+
+| Task | Kind | Status |
+|---|---|---|
+| Festival calendar, lunar dates included | technical | ⬜ To do |
+| Festival art in cells and SVG | technical | ⬜ To do |
+| Dates for several years asserted | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E8-S04</b> - as a <b>player</b>, I want <b>my pet to have a birthday</b> · ⬜ To do · 2 pts</summary>
+
+So that the day I adopted it is celebrated.
+
+**Acceptance criteria**
+- The adoption date is the first day the pet was saved; existing saves use the earliest date they hold
+- On the birthday the pet wears a party hat, the band says how old it is, and it earns a one-off XP gift
+
+| Task | Kind | Status |
+|---|---|---|
+| Adoption date and the birthday look | technical | ⬜ To do |
+| Birthday and the one-off gift asserted | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E8-S05</b> - as a <b>user</b>, I want <b>my pet to say something now and then (opt-in)</b> · ⬜ To do · 3 pts</summary>
+
+So that it has a personality.
+
+**Acceptance criteria**
+- Off by default; `/pet chatter on` turns it on
+- At most once every 20 minutes, after a turn, the pet says a one-liner about what was happening, written by a small model
+- It sees only the turn's short summary, never files or secrets, and costs a few hundred tokens at most
+- Lines show in the HUD for a few seconds and are never added to the conversation
+
+| Task | Kind | Status |
+|---|---|---|
+| Chatter with a small model, rate limit and opt-in | technical | ⬜ To do |
+| Off by default, the rate limit and what is sent asserted | testing | ⬜ To do |
+
+</details>
