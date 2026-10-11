@@ -2,13 +2,13 @@
 
 Stories live here as markdown, the format Claude Pets itself reads: run `/story E2-S01` inside this repo and the band tracks it. Statuses: ⬜ To do · 🟡 In progress · ✅ Done · 💡 Proposed.
 
-## P1 · For everyone, not just developers - 🟡 In progress
+## P1 · For everyone, not just developers - ✅ Done
 
-### E1 · A band you choose - 🟡 In progress
+### E1 · A band you choose - ✅ Done
 
 **Outcome.** The band shows what this person cares about. Developer rows are optional, and nothing nags someone who has no backlog.
 
-<details><summary><b>E1-S01</b> - as a <b>user</b>, I want <b>to choose which rows the band shows, and in what order</b> · 🟡 In progress · 3 pts</summary>
+<details><summary><b>E1-S01</b> - as a <b>user</b>, I want <b>to choose which rows the band shows, and in what order</b> · ✅ Done · 3 pts</summary>
 
 So that a non-developer sees weather and their pet, not branches and backlog ids.
 
@@ -20,11 +20,11 @@ So that a non-developer sees weather and their pet, not branches and backlog ids
 | Task | Kind | Status |
 |---|---|---|
 | Rows drawn from the setting, in its order | technical | ✅ Done |
-| Order, unknown names and the default asserted | testing | 🟡 In progress (written, not yet run) |
+| Order, unknown names and the default asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E1-S02</b> - as a <b>non-developer</b>, I want <b>no backlog prompts when I have no backlog</b> · 🟡 In progress · 2 pts</summary>
+<details><summary><b>E1-S02</b> - as a <b>non-developer</b>, I want <b>no backlog prompts when I have no backlog</b> · ✅ Done · 2 pts</summary>
 
 So that the band never asks me to set up something I don't use.
 
@@ -36,11 +36,11 @@ So that the band never asks me to set up something I don't use.
 | Task | Kind | Status |
 |---|---|---|
 | Story row only when there is something to show | technical | ✅ Done |
-| No-plan band asserted free of plan hints | testing | 🟡 In progress (written, not yet run) |
+| No-plan band asserted free of plan hints | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E1-S03</b> - as a <b>user with a small terminal</b>, I want <b>the least useful rows to go first</b> · 🟡 In progress · 2 pts</summary>
+<details><summary><b>E1-S03</b> - as a <b>user with a small terminal</b>, I want <b>the least useful rows to go first</b> · ✅ Done · 2 pts</summary>
 
 So that a short window keeps what matters.
 
@@ -52,15 +52,15 @@ So that a short window keeps what matters.
 | Task | Kind | Status |
 |---|---|---|
 | Row budget by importance, drawing by the chosen order | technical | ✅ Done |
-| Budgets of 4, 6 and 8 rows asserted | testing | 🟡 In progress (written, not yet run) |
+| Budgets of 4, 6 and 8 rows asserted | testing | ✅ Done |
 
 </details>
 
-### E2 · Weather where you are - 🟡 In progress
+### E2 · Weather where you are - ✅ Done
 
 **Outcome.** The band shows the local weather, and the pet's little world shows it too.
 
-<details><summary><b>E2-S01</b> - as a <b>user</b>, I want <b>to set my place once</b> · 🟡 In progress · 3 pts</summary>
+<details><summary><b>E2-S01</b> - as a <b>user</b>, I want <b>to set my place once</b> · ✅ Done · 3 pts</summary>
 
 So that the weather is mine, and nothing about where I am is sent anywhere until I choose it.
 
@@ -73,11 +73,11 @@ So that the weather is mine, and nothing about where I am is sent anywhere until
 | Task | Kind | Status |
 |---|---|---|
 | Geocode, store, forget; opt-in IP lookup | technical | ✅ Done |
-| No request without a place; place stored and cleared | testing | 🟡 In progress (written, not yet run) |
+| No request without a place; place stored and cleared | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E2-S02</b> - as a <b>user</b>, I want <b>the current conditions and temperature in °C, °F or both</b> · 🟡 In progress · 3 pts</summary>
+<details><summary><b>E2-S02</b> - as a <b>user</b>, I want <b>the current conditions and temperature in °C, °F or both</b> · ✅ Done · 3 pts</summary>
 
 So that I can glance at the weather without leaving the terminal.
 
@@ -89,11 +89,11 @@ So that I can glance at the weather without leaving the terminal.
 | Task | Kind | Status |
 |---|---|---|
 | Open-Meteo current conditions, WMO codes mapped | technical | ✅ Done |
-| Units, mapping and a failed fetch asserted | testing | 🟡 In progress (written, not yet run) |
+| Units, mapping and a failed fetch asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E2-S03</b> - as a <b>user</b>, I want <b>the sky in the pet's strip to match the weather</b> · 🟡 In progress · 5 pts</summary>
+<details><summary><b>E2-S03</b> - as a <b>user</b>, I want <b>the sky in the pet's strip to match the weather</b> · ✅ Done · 5 pts</summary>
 
 So that the pet lives in the same weather I do.
 
@@ -105,11 +105,11 @@ So that the pet lives in the same weather I do.
 | Task | Kind | Status |
 |---|---|---|
 | Sky layer under the pet, animated by the tick | technical | ✅ Done |
-| Each sky drawn without error | testing | 🟡 In progress (written, not yet run) |
+| Each sky drawn without error | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E2-S04</b> - as a <b>user</b>, I want <b>my pet to react to the weather</b> · 🟡 In progress · 2 pts</summary>
+<details><summary><b>E2-S04</b> - as a <b>user</b>, I want <b>my pet to react to the weather</b> · ✅ Done · 2 pts</summary>
 
 So that the weather feels part of the game.
 
@@ -130,7 +130,7 @@ So that the weather feels part of the game.
 
 **Outcome.** Progress means something over time, and every pet you raise has its own record.
 
-<details><summary><b>E3-S01</b> - as a <b>player</b>, I want <b>a profile that remembers me</b> · 🟡 In progress · 3 pts</summary>
+<details><summary><b>E3-S01</b> - as a <b>player</b>, I want <b>a profile that remembers me</b> · ✅ Done · 3 pts</summary>
 
 So that my lifetime progress is kept, not just my current pet's XP.
 
@@ -142,11 +142,11 @@ So that my lifetime progress is kept, not just my current pet's XP.
 | Task | Kind | Status |
 |---|---|---|
 | Profile store with additive updates | technical | ✅ Done |
-| Totals and concurrent sessions asserted | testing | 🟡 In progress (written, not yet run) |
+| Totals and concurrent sessions asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E3-S02</b> - as a <b>player</b>, I want <b>a leaderboard of every pet I have raised</b> · 🟡 In progress · 3 pts</summary>
+<details><summary><b>E3-S02</b> - as a <b>player</b>, I want <b>a leaderboard of every pet I have raised</b> · ✅ Done · 3 pts</summary>
 
 So that switching animals keeps each one's record.
 
@@ -158,11 +158,11 @@ So that switching animals keeps each one's record.
 | Task | Kind | Status |
 |---|---|---|
 | XP by animal; /pet board | technical | ✅ Done |
-| Ranking and the current-pet mark asserted | testing | 🟡 In progress (written, not yet run) |
+| Ranking and the current-pet mark asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E3-S03</b> - as a <b>player</b>, I want <b>daily streaks and achievements</b> · 🟡 In progress · 3 pts</summary>
+<details><summary><b>E3-S03</b> - as a <b>player</b>, I want <b>daily streaks and achievements</b> · ✅ Done · 3 pts</summary>
 
 So that coming back each day, and playing well, is rewarded.
 
@@ -174,7 +174,7 @@ So that coming back each day, and playing well, is rewarded.
 | Task | Kind | Status |
 |---|---|---|
 | Streak by local date; achievement rules | technical | ✅ Done |
-| Streak rollover and one-time unlocks asserted | testing | 🟡 In progress (written, not yet run) |
+| Streak rollover and one-time unlocks asserted | testing | ✅ Done |
 
 </details>
 
@@ -224,7 +224,7 @@ So that joining shares my name, level, XP, favourite pet and streak, and nothing
 
 </details>
 
-<details><summary><b>E4-S02</b> - as a <b>player</b>, I want <b>to join with my GitHub account, only when I choose to</b> · 🟡 In progress · 5 pts</summary>
+<details><summary><b>E4-S02</b> - as a <b>player</b>, I want <b>to join with my GitHub account, only when I choose to</b> · ✅ Done · 5 pts</summary>
 
 So that my place on the board is mine, and nothing is shared before I say so.
 
@@ -236,11 +236,11 @@ So that my place on the board is mine, and nothing is shared before I say so.
 | Task | Kind | Status |
 |---|---|---|
 | Device flow in the plugin; `/v1/join` in the Worker | technical | ✅ Done |
-| Join, bad token and leave asserted | testing | 🟡 In progress (Worker side passing; plugin side written, not yet run) |
+| Join, bad token and leave asserted | testing | ✅ Done (Worker and plugin) |
 
 </details>
 
-<details><summary><b>E4-S03</b> - as a <b>player</b>, I want <b>my score sent for me, and impossible scores refused</b> · 🟡 In progress · 3 pts</summary>
+<details><summary><b>E4-S03</b> - as a <b>player</b>, I want <b>my score sent for me, and impossible scores refused</b> · ✅ Done · 3 pts</summary>
 
 So that the board stays current without effort, and stays fair enough.
 
@@ -252,11 +252,11 @@ So that the board stays current without effort, and stays fair enough.
 | Task | Kind | Status |
 |---|---|---|
 | Sync after turns; plausibility checks and a per-key rate limit | technical | ✅ Done |
-| Each refusal asserted | testing | 🟡 In progress (Worker side passing; plugin sync written, not yet run) |
+| Each refusal asserted | testing | ✅ Done (Worker and plugin) |
 
 </details>
 
-<details><summary><b>E4-S04</b> - as a <b>player</b>, I want <b>to see the world board in the terminal</b> · 🟡 In progress · 2 pts</summary>
+<details><summary><b>E4-S04</b> - as a <b>player</b>, I want <b>to see the world board in the terminal</b> · ✅ Done · 2 pts</summary>
 
 So that I can check my rank without leaving Claude Code.
 
@@ -266,7 +266,7 @@ So that I can check my rank without leaving Claude Code.
 
 | Task | Kind | Status |
 |---|---|---|
-| Fetch and format the board | technical | ✅ Done (format checked; in-engine test written, not yet run) |
+| Fetch and format the board | technical | ✅ Done |
 
 </details>
 

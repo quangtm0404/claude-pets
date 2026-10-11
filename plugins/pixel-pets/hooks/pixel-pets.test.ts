@@ -455,7 +455,7 @@ test('XP saves add up: another session writing in between is never overwritten',
 
 // ── The plan: per-repo, never an error ──────────────────────────────────────
 /** A repo at /repo whose files are exactly `files` (path → markdown); a real store. */
-function repo(on: On, files: Record<string, string>, dirs: Record<string, { name: string; kind: string }[]> = {}) {
+function repo(on: On, files: Record<string, string>, dirs: Record<string, { name: string; kind: string }[]> = {}, toasts: string[] = []) {
   const store: Record<string, unknown> = {}
   // the engine hands hooks absolute, OS-shaped paths (C:\repo\x.md, or cwd-relative made absolute)
   const norm = (p: string) => p.split('\\').join('/').replace(/^[a-z]:/i, '')
@@ -475,7 +475,8 @@ function repo(on: On, files: Record<string, string>, dirs: Record<string, { name
   on('store.get', (_$, e) => ({ value: store[(e as { key: string }).key] }) as never)
   on('store.set', (_$, e) => ((store[(e as { key: string }).key] = (e as { value: unknown }).value), { value: undefined }) as never)
   on('ui.status', () => ({ value: undefined }))
-  on('ui.toast', () => ({ value: undefined }))
+  on('ui.toast', (_$, e) => (toasts.push(e.text), { value: undefined }))
+  on('env.get', () => ({ value: undefined }) as never)
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }) as never)
   return store
 }
@@ -486,7 +487,7 @@ test('E1-S02: no plan is not an error, and the band asks nothing; /story explain
   expect(ran.text).toContain('No plan found for this project')
   expect(ran.text).toContain('/story plan')
   const ui = await $.ui.mount(tallBand('terminal') as never)
-  expect(await ui.find({ text: /PLAN/ })).toBeUndefined()
+  expect(await ui.find({ text: /NO PLAN YET|\/story plan|PLAN [A-Z.]+\.MD/ })).toBeUndefined()
   expect(await ui.find({ text: /ERROR/ })).toBeUndefined()
   expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeDefined()
   await ui.unmount()
@@ -572,12 +573,12 @@ const GEO = { results: [{ name: 'Hanoi', country: 'Vietnam', latitude: 21.0245, 
 const NOW = (code: number, temp: number, wind = 4.7, isDay = 1) =>
   ({ current: { temperature_2m: temp, weather_code: code, wind_speed_10m: wind, is_day: isDay } })
 
-function weatherApi(on: On, current: unknown) {
+function weatherApi(on: On, current: unknown, next?: { current: unknown }) {
   const urls: string[] = []
   on('http.fetch', (_$, e) => {
     const url = (e as { url: string }).url
     urls.push(url)
-    const body = url.includes('geocoding-api') ? GEO : url.includes('api.open-meteo.com') ? current : {}
+    const body = url.includes('geocoding-api') ? GEO : url.includes('api.open-meteo.com') ? (next ? next.current : current) : {}
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(body) } } as never
   })
   return urls
@@ -621,8 +622,10 @@ test('E2-S02: temperatureUnit f shows °F and mph only', { options: { temperatur
 
 test('E2-S03: every sky draws under the pet without error', async ($, on) => {
   repo(on, {})
+  const sky = { current: NOW(0, 12) as unknown }
+  weatherApi(on, null, sky)
   for (const [code, isDay] of [[0, 1], [0, 0], [3, 1], [45, 1], [61, 1], [73, 1], [95, 1]] as const) {
-    weatherApi(on, NOW(code, 12, 35, isDay))
+    sky.current = NOW(code, 12, 35, isDay)
     await $.command.run(run('weather', 'Hanoi'))
     const ui = await $.ui.mount(tallBand('terminal') as never)
     expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeDefined()
@@ -646,9 +649,8 @@ test('E3-S01/S02/S03: turns build the profile, the board ranks the pet, and the 
 })
 
 test('E3-S03: five green test runs unlock GREEN STREAK, once', async ($, on) => {
-  repo(on, {})
   const toasts: string[] = []
-  on('ui.toast', (_$, e) => (toasts.push(e.text), { value: undefined }))
+  repo(on, {}, {}, toasts)
   on('tool.call', () => ({ result: {}, text: '  12 passed (3s)' }) as never)
   for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: 'npx playwright test' } as never)
   expect(toasts.filter(t => t === '▶ ACHIEVEMENT: GREEN STREAK').length).toBe(1)

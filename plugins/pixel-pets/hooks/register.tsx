@@ -1099,7 +1099,7 @@ async function gainXp($: EngineInterface, n: number, why: XpReason = 'other', co
   const before = levelOf(petSim.xp)
   petSim.xp += n
   const after = levelOf(petSim.xp)
-  void recordXp($, n, why, count, after)
+  await recordXp($, n, why, count, after)
   if (after > before) {
     const pet = await readPet($)
     petReact('★', 'warn', 3000, await $.clock.now(), true)
@@ -1157,16 +1157,20 @@ function freshProfile(today: string): Profile {
   }
 }
 
-/** Reads the profile; the first time, it starts from the XP the current pet already has. */
-async function readProfile($: EngineInterface): Promise<Profile> {
+/**
+ * Reads the profile. The first time, it starts from the XP the current pet already
+ * had, less `pending`: XP just gained that the caller is about to record itself.
+ */
+async function readProfile($: EngineInterface, pending = 0): Promise<Profile> {
   const v = await $.store.get('profile')
   if (v && typeof v === 'object' && 'totals' in (v as object)) return v as Profile
   await loadXp($)
   const p = freshProfile(dayOf(await $.clock.now()))
   const pet = await readPet($)
-  if (petSim.xp > 0) {
-    p.totals.xp = petSim.xp
-    p.byKind[pet.kind] = petSim.xp
+  const earlier = Math.max(0, petSim.xp - pending)
+  if (earlier > 0) {
+    p.totals.xp = earlier
+    p.byKind[pet.kind] = earlier
   }
   return p
 }
@@ -1175,8 +1179,8 @@ async function readProfile($: EngineInterface): Promise<Profile> {
  * Applies one change to the profile as it is in the store right now, so several
  * open sessions add up rather than overwrite one another (E3-S01).
  */
-async function bumpProfile($: EngineInterface, change: (p: Profile) => void): Promise<Profile> {
-  const p = await readProfile($)
+async function bumpProfile($: EngineInterface, change: (p: Profile) => void, pending = 0): Promise<Profile> {
+  const p = await readProfile($, pending)
   change(p)
   await $.store.set('profile', p)
   return p
@@ -1191,7 +1195,7 @@ async function recordXp($: EngineInterface, n: number, why: XpReason, count: num
     const counter = COUNTER[why]
     if (counter) prof.totals[counter] += why === 'coin' || why === 'bug' ? count : 1
     if (why === 'turn') prof.streak = nextStreak(prof.streak, today)
-  })
+  }, n)
   // achievements unlock once each, with a notice
   const fresh = ACHIEVEMENTS.filter(a => !p.badges.includes(a.id) && a.earned(p, level))
   if (fresh.length) {
@@ -1213,7 +1217,11 @@ async function playerName($: EngineInterface): Promise<string> {
   } catch {
     // no git
   }
-  return (await $.env.get('USERNAME')) ?? (await $.env.get('USER')) ?? 'PLAYER'
+  try {
+    return (await $.env.get('USERNAME')) ?? (await $.env.get('USER')) ?? 'PLAYER'
+  } catch {
+    return 'PLAYER'
+  }
 }
 
 /** /pet board: the pets you have raised, ranked, and your record under them (E3-S02, E3-S03). */
@@ -2252,7 +2260,6 @@ export const register: Register = (on, options) => {
       void refreshStatus($)
       void refreshGit($)
       if (!e.isAborted) await gainXp($, 2, 'turn')
-      void syncScore($)
       if (!e.isAborted && e.durationMs >= DONE_SOUND_AFTER_MS) {
         $.ui.toast(`▶ DONE IN ${fmtDuration(e.durationMs)}. READY.`, { timeoutMs: 6000 })
         void petVoice($)
@@ -2261,7 +2268,10 @@ export const register: Register = (on, options) => {
     } else {
       await kidDone($, e.agentId, !e.isAborted && e.reason !== 'error')
     }
-    return next(e)
+    const done = await next(e)
+    // the world board hears about it once the engine has finished the turn (E4-S03)
+    if (e.agentId === undefined) await syncScore($)
+    return done
   })
 
   on('tool.call', async ($, e, next) => {
@@ -2299,7 +2309,7 @@ export const register: Register = (on, options) => {
         if (res.failed) {
           for (let i = 0; i < Math.min(3, res.failed); i++) spawnBug()
         } else {
-          void gainXp($, 10, 'green')
+          await gainXp($, 10, 'green')
         }
         if (res.failed) {
           const failure: Failure = { command: res.command, failed: res.failed, names: failingTests(ran.text ?? '') }
