@@ -15,8 +15,8 @@
  * it directly in the tests.
  */
 
-import { ART, ITEMS, babySprite, extrasFor, sprite, stageOf } from '../../plugins/pixel-pets/hooks/art.ts'
-import type { ItemId } from '../../plugins/pixel-pets/hooks/art.ts'
+import { ART, ITEMS, babySprite, extrasFor, isSkinId, sprite, stageOf, vectorPet } from '../../plugins/pixel-pets/hooks/art.ts'
+import type { ItemId, SkinId } from '../../plugins/pixel-pets/hooks/art.ts'
 import type { PetKind } from '../../plugins/pixel-pets/types/index.d.ts'
 
 export type Row = {
@@ -35,7 +35,7 @@ export type Row = {
 }
 
 /** What a pet looks like on a badge and on a visit (E7): what it wears and the player's colours. */
-export type Look = { wearing: ItemId[]; fg: string; bg: string }
+export type Look = { wearing: ItemId[]; fg: string; bg: string; skin?: SkinId | null }
 const DEFAULT_LOOK: Look = { wearing: [], fg: '#5FE1FF', bg: '#06131F' }
 const HEX = /^#[0-9A-Fa-f]{6}$/
 
@@ -46,7 +46,11 @@ export function parseLook(v: unknown): Look | null {
   const wearing = Array.isArray(l.wearing) ? l.wearing : []
   if (wearing.length > 4 || !wearing.every(w => typeof w === 'string' && Object.hasOwn(ITEMS, w))) return null
   if (typeof l.fg !== 'string' || !HEX.test(l.fg) || typeof l.bg !== 'string' || !HEX.test(l.bg)) return null
-  return { wearing: [...new Set(wearing as ItemId[])], fg: l.fg.toUpperCase(), bg: l.bg.toUpperCase() }
+  // a blind box's skin (E9): one of the set, or none
+  if (l.skin !== undefined && l.skin !== null && !isSkinId(l.skin)) return null
+  const look: Look = { wearing: [...new Set(wearing as ItemId[])], fg: l.fg.toUpperCase(), bg: l.bg.toUpperCase() }
+  if (isSkinId(l.skin)) look.skin = l.skin
+  return look
 }
 const lookOf = (r: Row): Look => {
   try {
@@ -72,6 +76,7 @@ export type Env = {
 export const PETS = [
   'cat', 'dog', 'crab', 'shark', 'turtle', 'mouse', 'fox',
   'orca', 'whale', 'dolphin', 'giraffe', 'tiger', 'squirrel', 'penguin',
+  'dragon', 'unicorn', 'axolotl',
 ]
 /** The plugin's level curve: LV2 at 15 XP, LV3 at 60, LV4 at 135… */
 export const levelOf = (xp: number) => Math.floor(Math.sqrt(Math.max(0, xp) / 15)) + 1
@@ -205,8 +210,9 @@ export function cardSvg(r: Row): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(r.login)}'s Claude Pet: LV${r.level}, ${r.xp} XP">`,
     `<rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="8" fill="${bg}" stroke="${dim}" stroke-width="2"/>`,
-    `<g shape-rendering="crispEdges">${petRects(kind, r.level, look.wearing, 24, 32, 10)}</g>`,
-    `<rect x="16" y="${32 + 40 + 2}" width="88" height="3" fill="${dim}"/>`,
+    // the pet in the new look (E10): traced into an outlined cartoon, sitting on a line
+    `<g transform="translate(20 34) scale(7)">${vectorPet({ kind, stage: stageOf(r.level), pose: 'sit', mood: 'happy', items: look.wearing, skin: look.skin ?? null, dir: 1, isBlinking: false }).svg}</g>`,
+    `<rect x="14" y="91" width="96" height="3" rx="1.5" fill="${dim}"/>`,
     `<g font-family="${font}">`,
     `<text x="124" y="34" font-size="18" font-weight="bold" fill="${fg}">${esc(r.login)}</text>`,
     `<text x="124" y="58" font-size="14" fill="${mixHex(fg, isLight(bg) ? '#000000' : '#FFFFFF', 0.6)}">LV${r.level} ${esc(stageOf(r.level).toUpperCase())} ${esc(kind.toUpperCase())} · ${r.xp.toLocaleString('en-US')} XP</text>`,

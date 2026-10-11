@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.0 — 2026-10-11
+
+Surprises and a new look ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E9, E10). The board service is updated too.
+
+- **Blind boxes** (E9): one for each level up, each achievement and every 4 focus rounds, and 3 to start. `/pet box open`: the pet shakes it in the band and the find pops out. Common, rare, epic and legendary finds: box-only items (flower crown, headphones, bandana, hero cape, wizard hat, rainbow scarf, halo), skins (pastel, shadow, ghost, golden, galaxy) and three box-only animals (dragon, unicorn, axolotl). Duplicates become coins; ten boxes without an epic make the next one epic. `/pet collection`, `/pet skin`.
+- **A new look** (E10): every animal redrawn at 12×8 pixels with its own baby. The terminal shows them when the band has room (`/pet size auto|big|small`); the desktop app, VS Code, the diary card and badges trace them into smooth, outlined cartoons with eyes that blink.
+- Badges show skins and box finds.
+
 ## 1.6.0 — 2026-10-11
 
 Life and seasons begins ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E8-S01).

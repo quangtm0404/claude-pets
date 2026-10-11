@@ -17,9 +17,9 @@ A pixel pet game and retro dashboard for [Claude Code](https://claude.com/claude
 Players on the world board get a live badge for their GitHub profile (`/pet card`), drawn with the pet's stage, what it wears and their theme:
 
 <p>
-  <img src="docs/img/badge-whale-ice.svg" alt="A legend whale wearing a crown and shades, LV27, on the ice theme" width="420">
-  <img src="docs/img/badge-fox-amber.svg" alt="An adult fox in a scarf and hat, LV14, on the amber theme" width="420">
-  <img src="docs/img/badge-cat-paper.svg" alt="A baby cat with a bow, LV6, on the paper theme" width="420">
+  <img src="docs/img/badge-whale-galaxy.svg" alt="A legend whale in the galaxy skin, wearing a crown and a hero cape, LV27, on the ice theme" width="420">
+  <img src="docs/img/badge-dragon-amber.svg" alt="An adult dragon in a wizard hat, LV14, on the amber theme" width="420">
+  <img src="docs/img/badge-cat-paper.svg" alt="A baby cat in a flower crown, LV6, on the paper theme" width="420">
 </p>
 
 > **Early access.** Claude Pets is a *mod*: a plugin of function hooks. Mods are an early-access Claude Code feature, so they have to be available on your account for Claude Pets to load.
@@ -50,9 +50,11 @@ claude --plugin-dir ./plugins/pixel-pets
 - **Banner fonts**: `/retro font plain`, `bold` (𝗖𝗟𝗔𝗨𝗗𝗘 𝗣𝗘𝗧𝗦), `mono` (𝙲𝙻𝙰𝚄𝙳𝙴 𝙿𝙴𝚃𝚂), `double` (ℂ𝕃𝔸𝕌𝔻𝔼 ℙ𝔼𝕋𝕊), `wide` (ＣＬＡＵＤＥ　ＰＥＴＳ) or `pixel` (big pixel letters, when the band has room). A plugin can't change your terminal's own font; that's the terminal's setting (Windows Terminal: Settings › your profile › Appearance › Font face; macOS Terminal: Settings › Profiles › Text; VS Code: `terminal.integrated.fontFamily`). Retro fonts such as VT323 or Press Start 2P suit it.
 
 ### The pet game
-A 7×4-pixel pet walks the bottom of the band. It always gets its three rows first: in a short terminal (macOS's default 80×24, say) the info rows above it drop out one by one instead, so the pet never disappears. Pick one of 14 with `/pet list` and `/pet <animal>`:
+A pixel pet walks the bottom of the band. When the band has room it's the detailed one, 12×8 pixels with a baby version of its own; in a short terminal (macOS's default 80×24, say) it's the small classic 7×4 one, so the pet never disappears. `/pet size auto|big|small` chooses. In the desktop app, VS Code and on badges the same pets are drawn as smooth, outlined cartoons with eyes that blink. Pick one of 14 with `/pet list` and `/pet <animal>`:
 
 🐈 cat · 🐕 dog · 🦀 crab · 🦈 shark · 🐢 turtle · 🐁 mouse · 🦊 fox · 🐋 orca · 🐳 whale · 🐬 dolphin · 🦒 giraffe · 🐅 tiger · 🐿 squirrel · 🐧 penguin
+
+…and three that only hatch from a blind box: 🐉 dragon · 🦄 unicorn · 🦎 axolotl.
 
 | Event | In the game |
 |---|---|
@@ -74,6 +76,17 @@ A 7×4-pixel pet walks the bottom of the band. It always gets its three rows fir
 **The coin shop.** Coins you collect are spendable (everything collected before 1.4 counts): `/pet shop`, `/pet buy hat`, `/pet wear crown`, `/pet wear none`. A bow ◆15, a scarf ◆25, sunglasses ◆40, a top hat ◆60, a Tết lantern ◆88 and a crown ◆200, one per slot.
 
 **It reacts to your work.** It dances when tests go green and winces when they fail, rides a rocket when a `git push` lands, puzzles over a merge conflict until it's resolved, and naps beside a command that runs over a minute.
+
+**Blind boxes.** You get one for each level up, each achievement and every 4 focus rounds (and 3 to start). `/pet box open` and your pet shakes it in the band until the find pops out:
+
+| Rarity | Odds | What's inside |
+|---|---|---|
+| ◇ Common | 60% | flower crown, headphones, blue bandana |
+| ◆ Rare | 27% | hero cape, wizard hat, rainbow scarf |
+| ★ Epic | 10% | halo; pastel, shadow and ghost skins |
+| ✦ Legendary | 3% | golden and galaxy skins; the dragon, unicorn and axolotl |
+
+A find you already have is worth coins instead (◆10 to ◆150), and ten boxes in a row without an epic make the next one epic. `/pet box` shows the odds, `/pet collection` what you've found, `/pet wear <item>` and `/pet skin <name>|none` use it, and `/pet dragon` (once hatched) switches to it. Skins and items show on your badge too.
 
 `/pet name` asks you for a name (or use `/pet name Mochi` directly), `/pet ball` throws a ball, `/pet pat` pats it, `/pet stats` shows progress, and `/pet` on its own hides or shows the pet.
 

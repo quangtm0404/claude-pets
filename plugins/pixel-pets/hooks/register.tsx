@@ -4,9 +4,10 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { PluginOptions, RenderChildren, SessionUsage } from 'claude-code'
 import type { RunnerProps } from './runner'
 import {
-  ANGRY_EYE, ART, ITEMS, ITEM_IDS, KID_W, SPRITE_ROWS, SPRITE_W, babySprite, extrasFor, isItemId, nextStage, sprite, stageOf,
+  ANGRY_EYE, ART, BABY_W, BOX_PETS, HD, HD_H, HD_W, ITEMS, ITEM_IDS, KID_W, SKINS, SKIN_IDS, SPRITE_W, babySprite, extrasFor,
+  hdSprite, isItemId, isSkinId, itemPixels, nextStage, roundedPath, skinColors, sprite, stageOf, traceLoops, vectorPet,
 } from './art'
-import type { ItemId, Mood, PetArt, Pose, Stage } from './art'
+import type { ItemId, Mood, PetArt, Pose, Rarity, SkinId, Stage } from './art'
 
 export { ITEMS, babySprite, extrasFor, sprite, stageOf } from './art'
 export type { ItemId, Mood, Stage } from './art'
@@ -387,7 +388,7 @@ export function configure(options: PluginOptions) {
   CFG.leaderboardUrl = str('leaderboardUrl').replace(/\/+$/, '')
   CFG.githubClientId = str('githubClientId')
   const kind = str('petKind')
-  if (isPetKind(kind)) CFG.petKind = kind
+  if (isPetKind(kind) && !BOX_PETS.includes(kind)) CFG.petKind = kind
   CFG.theme = parseTheme(str('theme')) ?? 'ice'
   const f = str('font').toLowerCase()
   CFG.font = isFontName(f) ? f : 'plain'
@@ -817,6 +818,9 @@ const PET_LIFE: Record<PetKind, Omit<PetDef, keyof PetArt>> = {
   tiger: { voice: { happy: 'roar', cross: 'grumble_low' }, ideas: ['Stripes', 'Rajah', 'Hobbes', 'Tigger'], emoji: '🐅' },
   squirrel: { voice: { happy: 'chitter', cross: 'grumble_high' }, ideas: ['Nutmeg', 'Acorn', 'Hazel', 'Scrat'], emoji: '🐿' },
   penguin: { voice: { happy: 'honk', cross: 'grumble_high' }, ideas: ['Pingu', 'Waddles', 'Tux', 'Skipper'], emoji: '🐧' },
+  dragon: { voice: { happy: 'roar', cross: 'grumble_low' }, ideas: ['Ember', 'Smaug', 'Puff', 'Spark'], emoji: '🐉' },
+  unicorn: { voice: { happy: 'whistle', cross: 'grumble_high' }, ideas: ['Sparkle', 'Stardust', 'Twilight', 'Glimmer'], emoji: '🦄' },
+  axolotl: { voice: { happy: 'squeak', cross: 'grumble_high' }, ideas: ['Axel', 'Bubblegum', 'Gilly', 'Lotl'], emoji: '🦎' },
 }
 export const PETS = Object.fromEntries(
   (Object.keys(ART) as PetKind[]).map(k => [k, { ...ART[k], ...PET_LIFE[k] }]),
@@ -873,13 +877,29 @@ export type PetFrame = {
   flame?: boolean
   /** A friend's pet on a visit (E7-S02). */
   guest?: { kind: PetKind; x: number; dir: 1 | -1; pose: Pose; stage: Stage; items: ItemId[] }
+  /** The new look's bigger sprites, 8 pixels tall (E10); absent, the classic 4. */
+  hd?: boolean
+  /** A colouring from a blind box (E9). */
+  skin?: SkinId | null
+  /** A blind box being opened beside the pet (E9). */
+  box?: { x: number; isOpen: boolean; shake: number } | null
+  /** Draw only the scene, no pets (the SVG draws them as shapes). */
+  sceneOnly?: boolean
 }
+
+/** How many terminal rows the strip takes: the pixels, two to a row, and the ground. */
+export const stripRows = (hd: boolean) => (hd ? HD_H : 4) / 2 + 1
+/** The new look's sprites need this many band rows before `auto` picks them. */
+const HD_MIN_ROWS = 10
+/** `auto`: the new look's bigger sprites when the band has room; `big` and `small` choose (E10). */
+let petSize: 'auto' | 'big' | 'small' = 'auto'
+const BOX_BROWN = 0x8d5a2b, BOX_GOLD = 0xffd23f, BOX_RED = 0xe53935
 
 const COIN = 0xffd23f, COIN_SHINE = 0xfff6a0, BUG = 0xb04cff, BUG_LEGS = 0x6a1fb0
 
 /** One frame's pixels, W × H (H = 4), row-major; null where the sky shows through. */
-export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: number; x0: number } {
-  const W = f.columns, H = (PET_ROWS - 1) * 2
+export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: number; x0: number; pw: number } {
+  const W = f.columns, H = f.hd ? HD_H : 4
   const px: (number | null)[] = new Array<number | null>(W * H).fill(null)
   const set = (X: number, Y: number, c: number) => {
     if (X >= 0 && X < W && Y >= 0 && Y < H) px[Y * W + X] = c
@@ -907,7 +927,7 @@ export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: n
       const isSnow = sky.kind === 'snow'
       for (let x = 0; x < W; x++) {
         if (hash(x) % (isSnow ? 7 : 4) !== 0) continue
-        const y = 2 + ((Math.floor(t / (isSnow ? 3 : 1)) + hash(x + 5)) % 2)
+        const y = 2 + ((Math.floor(t / (isSnow ? 3 : 1)) + hash(x + 5)) % (H - 2))
         set(x + (sky.windy ? sky.dir * (y - 2) : 0), y, isSnow ? 0xf0f6ff : 0x5fa8ff)
       }
     }
@@ -933,20 +953,49 @@ export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: n
     set(Math.round(f.ballX), H - 1, COIN)
     set(Math.round(f.ballX) + 1, H - 1, COIN)
   }
+  if (f.box) {
+    // a gift box: shaking, then its lid up and a sparkle (E9)
+    const bx = Math.round(f.box.x) + (f.box.shake % 2), w = f.hd ? 5 : 4, h = f.hd ? 4 : 3
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(bx + x, H - h + y, x === Math.floor(w / 2) || y === 0 ? BOX_GOLD : BOX_BROWN)
+    if (f.box.isOpen) {
+      for (let x = -1; x <= w; x++) set(bx + x, H - h - 2, BOX_RED)
+      set(bx + Math.floor(w / 2), H - h - 3, f.sparkle ? COIN_SHINE : BOX_GOLD)
+    }
+  }
+  if (f.sceneOnly) return { px, W, H, x0: Math.round(f.x), pw: 0 }
   const colors: Record<string, number> = { E: ANGRY_EYE, ...PETS[f.kind].colors }
   for (const k of f.kids ?? []) {
     babySprite(f.kind, k.pose).forEach((row, ry) => {
       for (let rx = 0; rx < KID_W; rx++) {
         const c = colors[row[k.dir === 1 ? KID_W - 1 - rx : rx] ?? '.']
-        if (c !== undefined) set(Math.round(k.x) + rx, 1 + ry, c)
+        if (c !== undefined) set(Math.round(k.x) + rx, H - 3 + ry, c)
       }
     })
   }
-  /** One pet at (x, -lift): its stage's sprite, what it wears, and a rocket flame when asked. */
-  const drawPet = (kind: PetKind, stage: Stage, pose: Pose, mood: Mood, items: ItemId[], x: number, dir: 1 | -1, lift: number, flame: boolean) => {
-    const palette: Record<string, number> = { E: ANGRY_EYE, ...PETS[kind].colors }
-    const rows = stage === 'baby' ? babySprite(kind, pose, mood) : sprite(kind, pose, mood)
-    const sw = rows[0]?.length ?? SPRITE_W, top = -lift + (SPRITE_ROWS - rows.length)
+  /** One pet standing on the ground at x, `lift` pixels up: its sprite, what it wears, and a rocket flame when asked. */
+  let pw = SPRITE_W
+  const drawPet = (kind: PetKind, stage: Stage, pose: Pose, mood: Mood, items: ItemId[], x: number, dir: 1 | -1, lift: number, flame: boolean, skin: SkinId | null) => {
+    let rows: string[], palette: Record<string, number>, extras: [number, number, number][]
+    if (f.hd) {
+      rows = hdSprite(kind, stage, pose, mood)
+      const cs = skinColors(HD[kind].colors, skin)
+      palette = { ...cs, E: ANGRY_EYE, z: cs[HD[kind].fill] ?? 0x888888 }
+      extras = itemPixels(rows, items)
+      // a hat on a pet as tall as the strip would be cut off: it sits a pixel lower, over the ear tips
+      const over = H - rows.length - lift + Math.min(0, ...extras.map(e => e[1]))
+      if (over < 0) extras = extras.map(([x, y, c]) => [x, y + 1, c])
+      const sw = Math.max(...rows.map(r => r.length)), t = f.tick ?? 0
+      if (stage === 'legend' || stage === 'mythic') extras.push(t % 10 < 5 ? [-1, 0, 0xfff6a0] : [sw, 1, 0xfff6a0])
+      if (stage === 'mythic') {
+        const up = t % 6 < 3 ? 0 : 1, wx = Math.round(sw * 0.62)
+        extras.push([wx, up - 1, 0xf5f5ff], [wx + 1, up - 1, 0xf5f5ff], [wx + 2, up, 0xdde4ff])
+      }
+    } else {
+      rows = stage === 'baby' ? babySprite(kind, pose, mood) : sprite(kind, pose, mood)
+      palette = { E: ANGRY_EYE, ...skinColors(PETS[kind].colors, skin) }
+      extras = extrasFor(kind, stage, items, f.tick ?? 0)
+    }
+    const sw = Math.max(...rows.map(r => r.length)), top = H - rows.length - lift
     // the sprite is drawn facing left; facing right mirrors it
     const at = (sx: number) => x + (dir === 1 ? sw - 1 - sx : sx)
     rows.forEach((row, sy) => {
@@ -955,31 +1004,33 @@ export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: n
         if (c !== undefined) set(at(sx), top + sy, c)
       }
     })
-    for (const [sx, sy, c] of extrasFor(kind, stage, items, f.tick ?? 0)) set(at(sx), top + sy, c)
+    for (const [sx, sy, c] of extras) set(at(sx), top + sy, c)
     if (flame) {
       const mid = Math.floor(sw / 2), t = f.tick ?? 0
       set(at(mid), top + rows.length, t % 2 ? 0xff9800 : 0xffeb3b)
       set(at(mid + 1), top + rows.length, t % 2 ? 0xffeb3b : 0xff5722)
     }
+    return sw
   }
   // a visiting friend's pet (E7-S02), behind the main pet
-  if (f.guest) drawPet(f.guest.kind, f.guest.stage, f.guest.pose, 'happy', f.guest.items, Math.round(f.guest.x), f.guest.dir, 0, false)
+  if (f.guest) drawPet(f.guest.kind, f.guest.stage, f.guest.pose, 'happy', f.guest.items, Math.round(f.guest.x), f.guest.dir, 0, false, null)
   const x0 = Math.round(f.x)
-  drawPet(f.kind, f.stage ?? 'adult', f.pose, f.mood, f.items ?? [], x0, f.dir, f.lift, f.flame ?? false)
-  return { px, W, H, x0 }
+  pw = drawPet(f.kind, f.stage ?? 'adult', f.pose, f.mood, f.items ?? [], x0, f.dir, f.lift, f.flame ?? false, f.skin ?? null)
+  return { px, W, H, x0, pw }
 }
 
 /** Packs one frame into Raster cells: [codePoint, fg, bg] u32 triplets, row-major. */
 export function petCells(f: PetFrame): string {
-  const { px, W, x0 } = petPixels(f)
+  const { px, W, H, x0, pw } = petPixels(f)
+  const ROWS = H / 2 + 1
   const bg = hex(f.bg), ground = hex(f.ground)
-  const words = new Uint32Array(W * PET_ROWS * 3)
+  const words = new Uint32Array(W * ROWS * 3)
   const put = (i: number, cp: number, fg: number, back: number) => {
     words[i * 3] = cp
     words[i * 3 + 1] = fg
     words[i * 3 + 2] = back
   }
-  for (let r = 0; r < PET_ROWS - 1; r++) {
+  for (let r = 0; r < ROWS - 1; r++) {
     for (let x = 0; x < W; x++) {
       const top = px[r * 2 * W + x] ?? null, bot = px[(r * 2 + 1) * W + x] ?? null
       const i = r * W + x
@@ -990,7 +1041,7 @@ export function petCells(f: PetFrame): string {
     }
   }
   // the ground: a brick-ish strip, the HUD written over it
-  const groundAt = (PET_ROWS - 1) * W
+  const groundAt = (ROWS - 1) * W
   for (let x = 0; x < W; x++) put(groundAt + x, x % 4 === 3 ? 0x2580 : 0x2594, ground, bg)
   let col = 2
   for (const seg of [{ text: ' ', color: ground }, ...f.hud, { text: ' ', color: ground }]) {
@@ -1003,11 +1054,11 @@ export function petCells(f: PetFrame): string {
   }
   if (f.cursor && px[0] === null && px[W] === null) put(0, 0x2588, f.cursor.color, bg)
   for (const k of f.kids ?? []) {
-    const tx = Math.min(W - 1, Math.max(0, Math.round(k.x) + 2))
-    if (px[tx] === null && px[W + tx] === null) put(tx, k.tag.codePointAt(0) ?? 0x3f, k.tagColor, bg)
+    const tx = Math.min(W - 1, Math.max(0, Math.round(k.x) + 2)), ty = (H - 4) / 2
+    if (px[ty * 2 * W + tx] === null && px[(ty * 2 + 1) * W + tx] === null) put(ty * W + tx, k.tag.codePointAt(0) ?? 0x3f, k.tagColor, bg)
   }
   if (f.bubble) {
-    const bx = Math.min(W - 1, Math.max(0, x0 + (f.dir === 1 ? SPRITE_W : -1)))
+    const bx = Math.min(W - 1, Math.max(0, x0 + (f.dir === 1 ? pw : -1)))
     put(bx, f.bubble.glyph.codePointAt(0) ?? 0x21, f.bubble.color, bg)
   }
   return b64(new Uint8Array(words.buffer))
@@ -1016,7 +1067,7 @@ export function petCells(f: PetFrame): string {
 // ── The pet as SVG (E5-S01/S02) ──────────────────────────────────────────────
 // The desktop app, VS Code and phones have no pixel grid (Raster), but they draw
 // SVG: the same frame, a square per pixel, with the HUD as text on the ground.
-export const SVG_PX = 8
+export const SVG_PX = 6
 const SVG_EVERY = 4
 const SVG_HUD_H = 18
 const SVG_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
@@ -1040,25 +1091,51 @@ function pixelRects(px: (number | null)[], W: number, H: number, P: number, dy =
   return out
 }
 
-/** One frame as an SVG document: pixels, then the ground strip with the HUD on it. */
+/** Lit pixels of one scene as soft shapes, one path per colour. */
+function softRegions(px: (number | null)[], W: number, H: number): string {
+  const byColor = new Set<number>()
+  for (const c of px) if (c !== null) byColor.add(c)
+  let out = ''
+  for (const c of byColor) out += `<path d="${roundedPath(traceLoops((x, y) => x >= 0 && y >= 0 && x < W && y < H && px[y * W + x] === c, W, H), 0.5)}" fill="${css(c)}"/>`
+  return out
+}
+
+/**
+ * One frame as an SVG document in the new look (E10): the sky, coins, bugs and
+ * any gift box as soft shapes, the pets as outlined cartoons, the HUD on the ground.
+ */
 export function petSvg(f: PetFrame): string {
-  const { px, W, H, x0 } = petPixels(f)
-  const P = SVG_PX, w = W * P, top = H * P, h = top + SVG_HUD_H
+  const { px, W, H } = petPixels({ ...f, hd: true, sceneOnly: true })
+  // room above the sky for hats, crowns and wings
+  const HEAD = 4
+  const P = SVG_PX, w = W * P, top = (H + HEAD) * P, h = top + SVG_HUD_H
   const ground = f.ground
-  const hudX = 2 * P
+  const tick = f.tick ?? 0
+  const place = (svg: string, x: number, lift: number, scale = 1) =>
+    `<g transform="translate(${x * P} ${top - HD_H * P * scale - lift * P}) scale(${P * scale})">${svg}</g>`
+  const pets: string[] = []
+  for (const k of f.kids ?? []) {
+    pets.push(place(vectorPet({ kind: f.kind, stage: 'baby', pose: k.pose, mood: 'happy', dir: k.dir, tick, isBlinking: false }).svg, Math.round(k.x), 0, 0.6))
+  }
+  const g = f.guest
+  if (g) pets.push(place(vectorPet({ kind: g.kind, stage: g.stage, pose: g.pose, mood: 'happy', items: g.items, dir: g.dir, tick }).svg, Math.round(g.x), 0))
+  const me = vectorPet({ kind: f.kind, stage: f.stage ?? 'adult', pose: f.pose, mood: f.mood, items: f.items ?? [], skin: f.skin ?? null, dir: f.dir, tick })
+  const x0 = Math.round(f.x)
+  if (f.flame) pets.push(`<ellipse cx="${(x0 + me.w / 2) * P}" cy="${top - 2}" rx="${P * 0.9}" ry="${P * 0.7}" fill="${tick % 2 ? '#ff9800' : '#ffeb3b'}"/>`)
+  pets.push(place(me.svg, x0, f.lift))
   const hudText = f.hud.map(seg => `<tspan fill="${css(seg.color)}">${esc(seg.text)}</tspan>`).join('')
   const bubble = f.bubble
-    ? `<text x="${Math.min(W - 1, Math.max(0, x0 + (f.dir === 1 ? SPRITE_W : -1))) * P}" y="${P * 1.6}" font-size="${P * 1.8}" font-family="${SVG_FONT}" fill="${css(f.bubble.color)}">${esc(f.bubble.glyph)}</text>`
+    ? `<text x="${Math.min(W - 1, Math.max(0, x0 + (f.dir === 1 ? me.w : -1))) * P}" y="${top - HD_H * P + P * 1.2}" font-size="${P * 1.8}" font-family="${SVG_FONT}" fill="${css(f.bubble.color)}">${esc(f.bubble.glyph)}</text>`
     : ''
-  const tags = (f.kids ?? []).map(k => `<text x="${(Math.round(k.x) + 2) * P}" y="${P}" font-size="${P * 1.4}" font-family="${SVG_FONT}" fill="${css(k.tagColor)}">${esc(k.tag)}</text>`).join('')
-  const cursor = f.cursor && px[0] === null && px[W] === null ? `<rect x="0" y="0" width="${P}" height="${P * 2}" fill="${css(f.cursor.color)}"/>` : ''
+  const tags = (f.kids ?? []).map(k => `<text x="${(Math.round(k.x) + 2) * P}" y="${top - HD_H * P * 0.6 - 2}" font-size="${P * 1.4}" font-family="${SVG_FONT}" fill="${css(k.tagColor)}">${esc(k.tag)}</text>`).join('')
+  const cursor = f.cursor ? `<rect x="0" y="0" width="${P}" height="${P * 2}" fill="${css(f.cursor.color)}"/>` : ''
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" shape-rendering="crispEdges">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
     `<rect width="${w}" height="${h}" fill="${f.bg}"/>`,
-    pixelRects(px, W, H, P),
-    cursor, tags, bubble,
+    `<g transform="translate(0 ${HEAD * P}) scale(${P})">${softRegions(px, W, H)}</g>`,
+    cursor, pets.join(''), tags, bubble,
     `<rect x="0" y="${top}" width="${w}" height="2" fill="${ground}"/>`,
-    `<text x="${hudX}" y="${top + 13}" font-size="12" font-family="${SVG_FONT}" xml:space="preserve">${hudText}</text>`,
+    `<text x="${2 * P}" y="${top + 13}" font-size="12" font-family="${SVG_FONT}" xml:space="preserve">${hudText}</text>`,
     '</svg>',
   ].join('')
 }
@@ -1127,6 +1204,12 @@ const petSim = {
   toolSince: null as number | null,
   toolName: '',
   wearing: [] as ItemId[],
+  /** A colouring from a blind box (E9). */
+  skin: null as SkinId | null,
+  /** The new look's bigger sprites (E10): a remote surface always, the terminal when it has room. */
+  hd: false,
+  /** A blind box being opened: when it pops, and what was in it (E9). */
+  opening: null as null | { x: number; openAt: number; until: number; label: string },
   /** The focus timer, mirrored from the store (E8-S01). */
   focus: null as null | Focus,
   /** A friend's pet visiting for a minute (E7-S02). */
@@ -1153,6 +1236,12 @@ const petSim = {
   kidXp: 0,
 }
 
+/** How wide the pet is now: the new look's sprites are bigger, a baby smaller. */
+function petW(): number {
+  if (!petSim.hd) return SPRITE_W
+  return stageOf(levelOf(petSim.xp)) === 'baby' ? BABY_W : HD_W
+}
+
 function petReact(glyph: string, tone: Tone, ms: number, now: number, jump = false, more: { text?: string; kind?: 'dance' | 'rocket' } = {}) {
   petSim.react = { glyph, tone, until: now + ms, jump, ...more }
 }
@@ -1166,10 +1255,10 @@ async function readPet($: EngineInterface): Promise<{ kind: PetKind; name: strin
 /** A coin drops somewhere the pet is not standing (a successful tool call). */
 function spawnCoin() {
   const s = petSim
-  if (s.columns < SPRITE_W + 4 || s.coins.length >= 6) return
+  if (s.columns < petW() + 4 || s.coins.length >= 6) return
   for (let tries = 0; tries < 6; tries++) {
     const x = 2 + Math.floor(Math.random() * (s.columns - 4))
-    if (x < s.x - 1 || x > s.x + SPRITE_W) {
+    if (x < s.x - 1 || x > s.x + petW()) {
       s.coins.push(x)
       return
     }
@@ -1179,7 +1268,7 @@ function spawnCoin() {
 /** A bug crawls in from the edge furthest from the pet (an error). */
 function spawnBug() {
   const s = petSim
-  if (s.columns < SPRITE_W + 4 || s.bugs.length >= 4) return
+  if (s.columns < petW() + 4 || s.bugs.length >= 4) return
   const fromLeft = s.x > s.columns / 2
   s.bugs.push({ x: fromLeft ? 0 : s.columns - 2, dir: fromLeft ? 1 : -1 })
 }
@@ -1277,25 +1366,40 @@ async function gainXp($: EngineInterface, n: number, why: XpReason = 'other', co
       : `▶ LEVEL UP! ${pet.name.toUpperCase()} IS NOW LV${after}`, { timeoutMs: 6000 })
     void petVoice($)
     await saveXp($)
+    await earnBox($, after - before, 'LEVELLING UP')
   }
 }
 
 // ── Wallet (E6-S02): coins to spend, kept apart from lifetime coins ─────────
-export type Wallet = { coins: number; owned: ItemId[]; wearing: ItemId[] }
+export type Wallet = {
+  coins: number; owned: ItemId[]; wearing: ItemId[]
+  /** Unopened blind boxes, the skins and animals they gave, the skin worn, and boxes since an epic (E9). */
+  boxes: number; skins: SkinId[]; skin: SkinId | null; pets: PetKind[]; sinceEpic: number
+}
+/** Blind boxes came in 1.7.0: everyone starts with a few to open. */
+const STARTER_BOXES = 3
 
 async function readWallet($: EngineInterface): Promise<Wallet> {
   const w = (await $.store.get('wallet')) as Partial<Wallet> | undefined
+  const more = (x: Partial<Wallet> | undefined) => ({
+    boxes: typeof x?.boxes === 'number' ? x.boxes : STARTER_BOXES,
+    skins: (x?.skins ?? []).filter(isSkinId),
+    skin: isSkinId(x?.skin) ? x.skin : null,
+    pets: (x?.pets ?? []).filter(k => BOX_PETS.includes(k)),
+    sinceEpic: typeof x?.sinceEpic === 'number' ? x.sinceEpic : 0,
+  })
   if (w && typeof w.coins === 'number') {
-    return { coins: w.coins, owned: (w.owned ?? []).filter(isItemId), wearing: (w.wearing ?? []).filter(isItemId) }
+    return { coins: w.coins, owned: (w.owned ?? []).filter(isItemId), wearing: (w.wearing ?? []).filter(isItemId), ...more(w) }
   }
   // the first time: every coin collected so far is spendable
   const p = (await $.store.get('profile')) as Profile | undefined
-  return { coins: p?.totals?.coins ?? 0, owned: [], wearing: [] }
+  return { coins: p?.totals?.coins ?? 0, owned: [], wearing: [], ...more(undefined) }
 }
 
 async function writeWallet($: EngineInterface, w: Wallet) {
   await $.store.set('wallet', w)
   petSim.wearing = w.wearing
+  petSim.skin = w.skin
 }
 
 async function addCoins($: EngineInterface, n: number) {
@@ -1306,12 +1410,13 @@ async function addCoins($: EngineInterface, n: number) {
 export function shopText(w: Wallet): string {
   return [
     `COIN SHOP · you have ◆${w.coins}`,
-    ...ITEM_IDS.map(id => {
+    ...ITEM_IDS.filter(id => ITEMS[id].price > 0 || w.owned.includes(id)).map(id => {
       const it = ITEMS[id]
       const mark = w.wearing.includes(id) ? 'WEARING' : w.owned.includes(id) ? 'owned' : `◆${it.price}`
-      return `  ${id.padEnd(8)} ${it.name.padEnd(12)} ${mark}`
+      return `  ${id.padEnd(10)} ${it.name.padEnd(14)} ${mark}${it.rarity ? ` (${it.rarity}, from a box)` : ''}`
     }),
     '/pet buy <item> · /pet wear <item> (again to take it off) · /pet wear none',
+    `Blind boxes hold items you can't buy here: ${w.boxes} to open · /pet box`,
   ].join('\n')
 }
 
@@ -1326,19 +1431,106 @@ export async function shopCommand($: EngineInterface, verb: 'buy' | 'wear', what
   if (!isItemId(id)) return `No item called "${what}". ${ITEM_IDS.join(' · ')}`
   const it = ITEMS[id]
   if (verb === 'buy') {
+    if (it.price <= 0 && !w.owned.includes(id)) return `The ${it.name.toLowerCase()} only comes out of a blind box (${it.rarity}). /pet box`
     if (w.owned.includes(id)) return `You already have the ${it.name.toLowerCase()}. /pet wear ${id}`
     if (w.coins < it.price) return `The ${it.name.toLowerCase()} costs ◆${it.price}; you have ◆${w.coins}. Coins drop for every tool call that works.`
     const wearing = [...w.wearing.filter(x => ITEMS[x].slot !== it.slot), id]
-    await writeWallet($, { coins: w.coins - it.price, owned: [...w.owned, id], wearing })
+    await writeWallet($, { ...w, coins: w.coins - it.price, owned: [...w.owned, id], wearing })
     return `Bought the ${it.name.toLowerCase()} for ◆${it.price}, and put it on. ◆${w.coins - it.price} left.`
   }
-  if (!w.owned.includes(id)) return `You don't have the ${it.name.toLowerCase()} yet: /pet buy ${id} (◆${it.price}).`
+  if (!w.owned.includes(id)) return it.price > 0 ? `You don't have the ${it.name.toLowerCase()} yet: /pet buy ${id} (◆${it.price}).` : `You haven't found the ${it.name.toLowerCase()} yet: it comes out of blind boxes.`
   if (w.wearing.includes(id)) {
     await writeWallet($, { ...w, wearing: w.wearing.filter(x => x !== id) })
     return `Took off the ${it.name.toLowerCase()}.`
   }
   await writeWallet($, { ...w, wearing: [...w.wearing.filter(x => ITEMS[x].slot !== it.slot), id] })
   return `Wearing the ${it.name.toLowerCase()}.`
+}
+
+// ── Blind boxes (E9) ─────────────────────────────────────────────────────────
+// One for each level up, each achievement and every fourth focus round. Each holds
+// one find: a box-only item, a skin, or (rarely) a box-only animal. A find you
+// already have turns into coins, and ten boxes without an epic make the next one epic.
+export type Loot = { kind: 'item'; id: ItemId } | { kind: 'skin'; id: SkinId } | { kind: 'pet'; id: PetKind }
+export const BOX_ODDS: Record<Rarity, number> = { common: 60, rare: 27, epic: 10, legendary: 3 }
+export const BOX_PITY = 10
+export const SPARE_COINS: Record<Rarity, number> = { common: 10, rare: 25, epic: 60, legendary: 150 }
+export const LOOT: Record<Rarity, Loot[]> = {
+  common: [{ kind: 'item', id: 'flower' }, { kind: 'item', id: 'headphones' }, { kind: 'item', id: 'bandana' }],
+  rare: [{ kind: 'item', id: 'cape' }, { kind: 'item', id: 'wizard' }, { kind: 'item', id: 'rainbow' }],
+  epic: [{ kind: 'item', id: 'halo' }, { kind: 'skin', id: 'pastel' }, { kind: 'skin', id: 'shadow' }, { kind: 'skin', id: 'ghost' }],
+  legendary: [{ kind: 'skin', id: 'golden' }, { kind: 'skin', id: 'galaxy' }, { kind: 'pet', id: 'dragon' }, { kind: 'pet', id: 'unicorn' }, { kind: 'pet', id: 'axolotl' }],
+}
+const RARITY_TAG: Record<Rarity, string> = { common: '◇ COMMON', rare: '◆ RARE', epic: '★ EPIC', legendary: '✦ LEGENDARY' }
+
+/** One box, from two random numbers in [0, 1): its rarity (the pity lifts it), then which find. */
+export function rollBox(a: number, b: number, sinceEpic: number): { rarity: Rarity; loot: Loot } {
+  const roll = a * 100
+  let rarity: Rarity = roll < BOX_ODDS.common ? 'common'
+    : roll < BOX_ODDS.common + BOX_ODDS.rare ? 'rare'
+    : roll < 100 - BOX_ODDS.legendary ? 'epic' : 'legendary'
+  if (sinceEpic >= BOX_PITY - 1 && (rarity === 'common' || rarity === 'rare')) rarity = 'epic'
+  const pool = LOOT[rarity]
+  return { rarity, loot: pool[Math.min(pool.length - 1, Math.floor(b * pool.length))]! }
+}
+
+export const lootName = (l: Loot) =>
+  l.kind === 'item' ? ITEMS[l.id].name : l.kind === 'skin' ? `${SKINS[l.id].name} skin` : `${l.id[0]!.toUpperCase()}${l.id.slice(1)} (a new animal)`
+const lootHow = (l: Loot) => (l.kind === 'item' ? `/pet wear ${l.id}` : l.kind === 'skin' ? `/pet skin ${l.id}` : `/pet ${l.id}`)
+
+async function earnBox($: EngineInterface, n: number, why: string) {
+  if (n <= 0) return
+  const w = await readWallet($)
+  await writeWallet($, { ...w, boxes: w.boxes + n })
+  $.ui.toast(`▶ +${n} BLIND BOX${n === 1 ? '' : 'ES'} FOR ${why} · /pet box open`, { timeoutMs: 7000 })
+}
+
+export const BOX_REVEAL_MS = 1500
+const BOX_SHOW_MS = 6000
+
+/** Opens one box: the pet shakes it in the band, then the find pops out. */
+async function openBox($: EngineInterface): Promise<string> {
+  const w = await readWallet($)
+  if (w.boxes < 1) return 'No blind boxes to open. You get one for each level up, each achievement and every 4 focus rounds.'
+  const { rarity, loot } = rollBox(Math.random(), Math.random(), w.sinceEpic)
+  const has = loot.kind === 'item' ? w.owned.includes(loot.id) : loot.kind === 'skin' ? w.skins.includes(loot.id) : w.pets.includes(loot.id)
+  const next: Wallet = { ...w, boxes: w.boxes - 1, sinceEpic: rarity === 'epic' || rarity === 'legendary' ? 0 : w.sinceEpic + 1 }
+  if (has) next.coins += SPARE_COINS[rarity]
+  else if (loot.kind === 'item') next.owned = [...w.owned, loot.id]
+  else if (loot.kind === 'skin') next.skins = [...w.skins, loot.id]
+  else next.pets = [...w.pets, loot.id]
+  await writeWallet($, next)
+  const label = `${RARITY_TAG[rarity]} · ${lootName(loot).toUpperCase()}${has ? ` (A SPARE: +◆${SPARE_COINS[rarity]})` : ''}`
+  const now = await $.clock.now()
+  const s = petSim
+  const boxX = Math.max(0, Math.min(Math.max(0, s.columns - 6), s.dir === 1 ? s.x + petW() + 1 : s.x - 6))
+  s.opening = { x: boxX, openAt: now + BOX_REVEAL_MS, until: now + BOX_REVEAL_MS + BOX_SHOW_MS, label }
+  $.clock.after(BOX_REVEAL_MS, () => {
+    $.ui.toast(`▶ BLIND BOX: ${label}${has ? '' : ` · ${lootHow(loot)}`}`, { timeoutMs: 9000 })
+    void $.clock.now().then(t => petReact('★', 'warn', 3000, t, true))
+    void petVoice($)
+  })
+  return `📦 Opening a blind box… watch the band. ${next.boxes} left.`
+}
+
+export function boxText(w: Wallet): string {
+  const pct = (r: Rarity) => `${RARITY_TAG[r]} ${BOX_ODDS[r]}%: ${LOOT[r].map(lootName).join(', ')}`
+  return [
+    `BLIND BOXES · ${w.boxes} to open${w.boxes ? ' · /pet box open' : ''}`,
+    'You get one for each level up, each achievement and every 4 focus rounds.',
+    ...(['common', 'rare', 'epic', 'legendary'] as Rarity[]).map(r => `  ${pct(r)}`),
+    `A find you already have is worth coins instead. ${BOX_PITY} boxes in a row without an epic make the next one epic.`,
+  ].join('\n')
+}
+
+export function collectionText(w: Wallet): string {
+  const items = w.owned.map(id => `${id}${w.wearing.includes(id) ? '*' : ''}`)
+  return [
+    `COLLECTION · ◆${w.coins} · ${w.boxes} blind box${w.boxes === 1 ? '' : 'es'} to open`,
+    `Items: ${items.length ? items.join(', ') : 'none yet'}   (* worn · /pet wear <item>)`,
+    `Skins: ${w.skins.length ? w.skins.map(k => `${k}${w.skin === k ? '*' : ''}`).join(', ') : 'none yet'}   (/pet skin <name>|none)`,
+    `Box animals: ${BOX_PETS.map(k => (w.pets.includes(k) ? `${PETS[k].emoji} ${k}` : `🔒 ${k}`)).join(' · ')}`,
+  ].join('\n')
 }
 
 /** What the pet is reacting to right now, for /pet stats (E6-S04). */
@@ -1454,6 +1646,7 @@ async function endPhase($: EngineInterface, armed: Focus) {
     await gainXp($, xp, 'focus')
     await saveXp($)
     petReact('★', 'warn', 5000, now, true, { text: `GUARDED FOCUS ROUND ${f.round}` })
+    if (f.round % LONG_BREAK_EVERY === 0) await earnBox($, 1, `${LONG_BREAK_EVERY} FOCUS ROUNDS`)
     $.ui.toast(rest > 0
       ? `▶ FOCUS ROUND ${f.round} DONE · +${xp} XP · ${rest} MIN BREAK: STAND UP, STRETCH, DRINK SOME WATER`
       : `▶ FOCUS DONE · +${xp} XP`, { timeoutMs: 10_000 })
@@ -1536,18 +1729,14 @@ export function diaryText(d: Diary, pet: { kind: PetKind; name: string }, wx: We
 }
 
 /** The diary as an SVG card: the pet, then the day's lines. */
-export function diarySvg(text: string, pet: { kind: PetKind }, level: number, items: ItemId[], C: Palette): string {
+export function diarySvg(text: string, pet: { kind: PetKind }, level: number, items: ItemId[], C: Palette, skin: SkinId | null = null): string {
   const lines = text.split('\n')
   const w = 640, h = 44 + lines.length * 20
-  const frame: PetFrame = {
-    kind: pet.kind, columns: 9, x: 1, dir: 1, pose: 'sit', mood: 'happy', lift: 0, bubble: null, ballX: null,
-    coins: [], bugs: [], sparkle: false, bg: C.bg, ground: C.dim, cursor: null, hud: [], stage: stageOf(level), items, tick: 0,
-  }
-  const { px, W, H } = petPixels(frame)
+  const art = vectorPet({ kind: pet.kind, stage: stageOf(level), pose: 'sit', mood: 'happy', items, skin, dir: 1, isBlinking: false })
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
     `<rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="8" fill="${C.bg}" stroke="${C.dim}" stroke-width="2"/>`,
-    `<g transform="translate(14 ${h / 2 - 20})" shape-rendering="crispEdges">${pixelRects(px, W, H, 10)}</g>`,
+    `<g transform="translate(18 ${h / 2 - 40}) scale(7)">${art.svg}</g>`,
     `<g font-family="${SVG_FONT}" font-size="13">`,
     ...lines.map((l, i) => `<text x="112" y="${30 + i * 20}" fill="${i === 0 ? C.hi : i === 1 ? C.fg : C.dim}"${i === 0 ? ' font-weight="bold"' : ''}>${esc(l)}</text>`),
     '</g></svg>',
@@ -1658,6 +1847,7 @@ async function recordXp($: EngineInterface, n: number, why: XpReason, count: num
       for (const a of fresh) if (!prof.badges.includes(a.id)) prof.badges.push(a.id)
     })
     for (const a of fresh) $.ui.toast(`▶ ACHIEVEMENT: ${a.title}`, { timeoutMs: 7000 })
+    await earnBox($, fresh.length, fresh.length === 1 ? 'AN ACHIEVEMENT' : 'ACHIEVEMENTS')
     petReact('★', 'warn', 2500, await $.clock.now(), true)
     void petVoice($)
   }
@@ -1726,7 +1916,7 @@ async function boardScore($: EngineInterface) {
 /** What the badge and visitors see (E7): what the pet wears and the theme's colours. */
 async function boardLook($: EngineInterface) {
   const C = paletteOf(await read($, theme))
-  return { wearing: petSim.wearing, fg: C.fg, bg: C.bg }
+  return { wearing: petSim.wearing, fg: C.fg, bg: C.bg, skin: petSim.skin }
 }
 
 /** Sends a joined player's score, at most once a minute; a refusal stops it for the session (E4-S03). */
@@ -1862,7 +2052,7 @@ async function openPetPane($: EngineInterface) {
 /** Fits the game to a new width, keeping the pet on screen. */
 function sizeSim(columns: number) {
   petSim.columns = columns
-  if (petSim.x > columns - SPRITE_W) petSim.x = columns - SPRITE_W
+  if (petSim.x > columns - petW()) petSim.x = columns - petW()
 }
 
 /** A frame of the pet sitting, drawn before the first tick has run. */
@@ -1873,15 +2063,15 @@ function stillFrame(pet: { kind: PetKind; name: string }, C: Palette, columns: n
     bubble: null, ballX: petSim.ballX, coins: petSim.coins, bugs: petSim.bugs, sparkle: false,
     bg: C.bg, ground: C.dim, cursor: null,
     hud: hud(C, name, petSim.line || `${name} THE ${pet.kind.toUpperCase()}`),
-    stage: stageOf(levelOf(petSim.xp)), items: petSim.wearing,
+    stage: stageOf(levelOf(petSim.xp)), items: petSim.wearing, hd: petSim.hd, skin: petSim.skin,
   }
 }
 
 /** The SVG to draw on a remote surface: the latest frame, or a still one until the game ticks. */
 function remoteArt(art: string, pet: { kind: PetKind; name: string }, C: Palette, columns: number): string {
   // a terminal on the same session sets the width; otherwise this surface does
-  if (!petSim.isMounted && petSim.columns !== Math.max(SPRITE_W + 2, columns)) {
-    sizeSim(Math.max(SPRITE_W + 2, columns))
+  if (!petSim.isMounted && petSim.columns !== Math.max(petW() + 2, columns)) {
+    sizeSim(Math.max(petW() + 2, columns))
     petSim.lastArt = ''
   }
   return art || petSvg(stillFrame(pet, C, petSim.columns))
@@ -1903,7 +2093,7 @@ function hud(C: Palette, name: string, line: string): HudSegment[] {
 async function petTick($: EngineInterface) {
   const s = petSim
   const isRemote = s.remote.band || s.remote.pane
-  if ((!s.isMounted && !isRemote) || s.columns < SPRITE_W + 2) return
+  if ((!s.isMounted && !isRemote) || s.columns < petW() + 2) return
   const now = await $.clock.now()
   if (s.lastActive === 0) s.lastActive = now
   await loadXp($)
@@ -1912,7 +2102,7 @@ async function petTick($: EngineInterface) {
   const name = pet.name.toUpperCase()
   s.tick++
   if (s.react && s.react.until < now) s.react = null
-  const maxX = s.columns - SPRITE_W
+  const maxX = s.columns - petW()
   const sparkle = s.tick % 6 < 3
 
   // bugs crawl
@@ -1927,10 +2117,19 @@ async function petTick($: EngineInterface) {
   let bubble: PetFrame['bubble'] = null
   const walk = (every: number) => (Math.floor(s.tick / every) % 2 ? 'walkA' : 'walkB') as Pose
   const face = (target: number) => {
-    s.dir = target > s.x + SPRITE_W / 2 ? 1 : -1
+    s.dir = target > s.x + petW() / 2 ? 1 : -1
   }
 
-  if (s.mood === 'gameover') {
+  if (s.opening && now >= s.opening.until) s.opening = null
+  const op = s.opening
+  if (op) {
+    // a blind box: the pet sits by it while it shakes, then jumps for joy at the find
+    const isOpen = now >= op.openAt
+    face(op.x)
+    lift = isOpen && s.tick % 4 < 2 ? 1 : 0
+    bubble = isOpen ? { glyph: '★', color: hex(C.warn) } : s.tick % 6 < 3 ? { glyph: '?', color: hex(C.info) } : null
+    line = isOpen ? `${name} FOUND ${op.label}` : `${name} OPENS A BLIND BOX…`
+  } else if (s.mood === 'gameover') {
     pose = 'sleep'
     bubble = { glyph: s.tick % 16 < 8 ? 'x' : 'X', color: hex(C.fail) }
     line = `GAME OVER${s.resetText ? ` · CONTINUE IN ${s.resetText}` : ''}`
@@ -1939,7 +2138,7 @@ async function petTick($: EngineInterface) {
     face(s.ballX)
     pose = walk(1)
     line = `${name} CHASES THE BALL`
-    const mouth = s.x + (s.dir === 1 ? SPRITE_W - 2 : 0)
+    const mouth = s.x + (s.dir === 1 ? petW() - 2 : 0)
     if (Math.abs(s.ballX - mouth) < 1.5) {
       s.ballX = null
       petReact('♥', 'fail', 2500, now, true)
@@ -2039,9 +2238,9 @@ async function petTick($: EngineInterface) {
       if (Math.random() < 0.04) k.dir = k.dir === 1 ? -1 : 1
       k.x += 0.5 * k.dir
     } else {
-      k.dir = s.x + SPRITE_W / 2 > k.x + KID_W / 2 ? 1 : -1
+      k.dir = s.x + petW() / 2 > k.x + KID_W / 2 ? 1 : -1
       k.x += 1.3 * k.dir
-      if (Math.abs(k.x + KID_W / 2 - (s.x + SPRITE_W / 2)) < 3 || now - k.doneAt > 8000) await bringHome($, k)
+      if (Math.abs(k.x + KID_W / 2 - (s.x + petW() / 2)) < 3 || now - k.doneAt > 8000) await bringHome($, k)
     }
     if (k.x <= 0) { k.x = 0; k.dir = 1 }
     if (k.x >= s.columns - KID_W) { k.x = s.columns - KID_W; k.dir = -1 }
@@ -2054,7 +2253,7 @@ async function petTick($: EngineInterface) {
   const g = s.guest
   if (g) {
     const side = g.x > s.x ? 1 : -1
-    const target = s.x + side * (SPRITE_W + 2)
+    const target = s.x + side * (petW() + 2)
     if (Math.abs(g.x - target) > 1) {
       g.dir = target > g.x ? 1 : -1
       g.x += 0.6 * g.dir
@@ -2064,12 +2263,12 @@ async function petTick($: EngineInterface) {
       g.pose = s.tick % 20 < 10 ? 'sit' : walk(2)
       if (!s.react && s.mood !== 'gameover' && s.tick % 20 < 6) bubble = { glyph: '♥', color: hex(C.fail) }
     }
-    g.x = Math.max(0, Math.min(s.columns - SPRITE_W, g.x))
+    g.x = Math.max(0, Math.min(s.columns - petW(), g.x))
     if (!s.react && s.mood !== 'gameover') line = `${name} PLAYS WITH ${g.login.toUpperCase()}'S ${g.kind.toUpperCase()}`
   }
 
   // pick-ups and stomps
-  const left = s.x - 0.5, right = s.x + SPRITE_W - 0.5
+  const left = s.x - 0.5, right = s.x + petW() - 0.5
   const kept = s.coins.filter(c => c < left || c > right)
   if (kept.length < s.coins.length) {
     const got = s.coins.length - kept.length
@@ -2096,13 +2295,14 @@ async function petTick($: EngineInterface) {
     })),
     cursor: !s.isWorking && s.tick % 8 < 4 ? { color: hex(C.fg) } : null,
     hud: hud(C, name, line),
-    stage: stageOf(levelOf(s.xp)), items: s.wearing, flame,
+    stage: stageOf(levelOf(s.xp)), items: s.wearing, flame, hd: s.hd, skin: s.skin,
+    box: op ? { x: op.x, isOpen: now >= op.openAt, shake: now < op.openAt ? s.tick : 0 } : null,
     guest: s.guest ? { kind: s.guest.kind, x: s.guest.x, dir: s.guest.dir, pose: s.guest.pose, stage: stageOf(s.guest.level), items: s.guest.wearing } : undefined,
   }
   if (s.isMounted) {
     const cells = petCells(frame)
     s.lastCells = cells
-    const shown = await $.ui.blit({ requestId: s.requestId, key: 'pet', cells, columns: s.columns, rows: PET_ROWS })
+    const shown = await $.ui.blit({ requestId: s.requestId, key: 'pet', cells, columns: s.columns, rows: stripRows(s.hd) })
     if (shown.deny !== undefined) s.isMounted = false
   }
   // remote surfaces redraw the whole tree, so they get a frame every 4 ticks (~0.5 s), and only when it changed
@@ -2141,7 +2341,7 @@ function spawnKid(agentId: string, label: string, now: number) {
   const s = petSim
   if (s.kids.some(k => k.agentId === agentId)) return
   s.kidSerial++
-  const side = s.dir === 1 ? -KID_W - 1 : SPRITE_W + 1
+  const side = s.dir === 1 ? -KID_W - 1 : petW() + 1
   const x = Math.max(0, Math.min(Math.max(0, s.columns - KID_W), s.x + side))
   s.kids.push({
     agentId, n: s.kidSerial, label: label.replace(/\s+/g, ' ').trim().slice(0, 40), x, dir: s.dir === 1 ? -1 : 1,
@@ -2184,7 +2384,7 @@ async function bringHome($: EngineInterface, k: Kid) {
 
 async function throwBall($: EngineInterface) {
   const s = petSim
-  const maxX = Math.max(SPRITE_W, s.columns - 3)
+  const maxX = Math.max(petW(), s.columns - 3)
   // land it on the far side of the pet so there is a chase
   s.ballX = s.x < maxX / 2 ? maxX - Math.random() * (maxX / 3) : Math.random() * (maxX / 3)
   s.lastActive = await $.clock.now()
@@ -2450,7 +2650,7 @@ const COMMANDS: { name: string; description: string }[] = [
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
-    description: 'Claude Pets: /pet help lists everything · /pet focus [25/5|45/5|stop] · /pet (show/hide) · /pet weather <city>|here|off · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
+    description: 'Claude Pets: /pet help lists everything · /pet box [open] · /pet collection · /pet skin · /pet focus [25/5|45/5|stop] · /pet (show/hide) · /pet weather <city>|here|off · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
   },
   // not `standup`: other plugins commonly own that name
   { name: 'standup64', description: 'Three-line standup (Done / Next / Blockers) from this session, copied to the clipboard' },
@@ -2472,6 +2672,9 @@ export const PET_HELP = [
   '  /pet shop                  spend coins: bow, scarf, shades, hat, lantern, crown',
   '  /pet buy <item> · /pet wear <item>|none   buy it; put it on or take it off',
   '  /pet focus [45/5] · stop  a Pomodoro timer your pet guards (25/5 by default); /pet focus help',
+  '  /pet box [open]            blind boxes: one per level up, achievement and 4 focus rounds',
+  '  /pet collection            what you have found · /pet skin <name>|none',
+  '  /pet size auto|big|small   the bigger, detailed pet or the small classic one',
   '  /pet play [off]            open (or close) the runner game in the band; click it, then space to jump',
   '  /pet play auto [off]       open it by itself while Claude works (off by default)',
   '  /pet pane                  the pet in a pane of its own (VS Code opens it by itself)',
@@ -2588,7 +2791,11 @@ export const register: Register = (on, options) => {
       }
     }
     if ((await $.store.get('petShown')) === false) await update($, petShown, () => false)
-    petSim.wearing = (await readWallet($)).wearing
+    const wallet = await readWallet($)
+    petSim.wearing = wallet.wearing
+    petSim.skin = wallet.skin
+    const size = await $.store.get('petSize')
+    if (size === 'big' || size === 'small' || size === 'auto') petSize = size
     const best = await $.store.get('runnerBest')
     if (typeof best === 'number') game.best = best
     if ((await $.store.get('chimeOn')) === false) await update($, chimeOn, () => false)
@@ -2653,10 +2860,15 @@ export const register: Register = (on, options) => {
     if (/^name$/i.test(args)) named = await askPetName($)
     if (/^name$/i.test(args) && !named) return { text: 'Kept the name.' }
     if (/^(list|pets|animals)$/i.test(args)) {
-      return { text: `Pets: ${PET_KINDS.map(k => `${PETS[k].emoji} ${k}`).join(' · ')}\nSwitch with /pet <animal>; your XP and name stay.` }
+      const w = await readWallet($)
+      const locked = (k: PetKind) => BOX_PETS.includes(k) && !w.pets.includes(k)
+      return { text: `Pets: ${PET_KINDS.map(k => (locked(k) ? `🔒 ${k}` : `${PETS[k].emoji} ${k}`)).join(' · ')}\nSwitch with /pet <animal>; your XP and name stay. 🔒 animals hatch from blind boxes (/pet box).` }
     }
     if (isPetKind(kind)) {
       const k: PetKind = kind
+      if (BOX_PETS.includes(k) && !(await readWallet($)).pets.includes(k)) {
+        return { text: `The ${k} only hatches from a blind box (✦ legendary). /pet box` }
+      }
       const pet = await update($, petState, p => ({ ...(p.name ? p : { kind: CFG.petKind, name: CFG.petName }), kind: k }))
       await $.store.set('pet', pet)
     } else if (named) {
@@ -2741,7 +2953,7 @@ export const register: Register = (on, options) => {
       const now = await $.clock.now()
       petSim.guest = {
         login: d.login, kind: d.favPet, level: d.level ?? 1, wearing: (d.wearing ?? []).filter(isItemId),
-        x: Math.max(0, petSim.columns - SPRITE_W - 1), dir: -1, pose: 'walkA', until: now + VISIT_MS,
+        x: Math.max(0, petSim.columns - petW() - 1), dir: -1, pose: 'walkA', until: now + VISIT_MS,
       }
       if (d.isFirstToday) await gainXp($, 5, 'visit')
       return { text: `${d.login}'s ${d.favPet} (LV${d.level}) comes to play for a minute.${d.isFirstToday ? ' +5 XP for you both, once a day.' : ''}` }
@@ -2761,7 +2973,7 @@ export const register: Register = (on, options) => {
       const text = diaryText(d, pet, wx, CFG.temperatureUnit)
       if (!/card$/i.test(args)) return { text: `${text}\n\n/pet diary card copies it as an SVG picture to share.` }
       await loadXp($)
-      const copied = await $.ui.copy({ text: diarySvg(text, pet, levelOf(petSim.xp), petSim.wearing, paletteOf(themeName)) })
+      const copied = await $.ui.copy({ text: diarySvg(text, pet, levelOf(petSim.xp), petSim.wearing, paletteOf(themeName), petSim.skin) })
       return { text: copied.isCopied ? 'Copied the diary card as SVG: paste it into a file named diary.svg to share it.' : 'Could not copy the card here.' }
     } else if (/^(play|game)(\s+(on|off|stop|auto|auto\s+off))?$/i.test(args)) {
       const opt = args.replace(/^(play|game)\s*/i, '').toLowerCase().replace(/\s+/g, ' ')
@@ -2779,6 +2991,29 @@ export const register: Register = (on, options) => {
       return { text: 'The runner is in the band: click it, then space to jump the bugs. /pet play off closes it.' }
     } else if (/^focus\b/i.test(args)) {
       return { text: await focusCommand($, args.replace(/^focus\s*/i, '')) }
+    } else if (/^box(es)?(\s+open)?$/i.test(args)) {
+      return { text: /open$/i.test(args) ? await openBox($) : boxText(await readWallet($)) }
+    } else if (/^(collection|inventory|bag)$/i.test(args)) {
+      return { text: collectionText(await readWallet($)) }
+    } else if (/^skins?(\s+\S+)?$/i.test(args)) {
+      const want = args.replace(/^skins?\s*/i, '').toLowerCase()
+      const w = await readWallet($)
+      if (!want) return { text: `Skins: ${w.skins.length ? w.skins.join(', ') : 'none yet: they come out of blind boxes (★ epic, ✦ legendary)'}${w.skin ? ` · wearing ${w.skin}` : ''}\n/pet skin <name> · /pet skin none` }
+      if (want === 'none' || want === 'off') {
+        await writeWallet($, { ...w, skin: null })
+        return { text: 'Back to its own colours.' }
+      }
+      if (!isSkinId(want)) return { text: `No skin called "${want}". Skins: ${SKIN_IDS.join(', ')}` }
+      if (!w.skins.includes(want)) return { text: `You haven't found the ${SKINS[want].name.toLowerCase()} skin yet: it comes out of blind boxes (${SKINS[want].rarity}).` }
+      await writeWallet($, { ...w, skin: want })
+      return { text: `Now ${SKINS[want].name.toLowerCase()}.` }
+    } else if (/^size(\s+(auto|big|small))?$/i.test(args)) {
+      const want = args.replace(/^size\s*/i, '').toLowerCase()
+      if (!want) return { text: `Pet size: ${petSize} (auto: the bigger, detailed pet when the band has room, the small classic one when it doesn't). /pet size auto|big|small` }
+      petSize = want as typeof petSize
+      await $.store.set('petSize', petSize)
+      petSim.lastCells = ''
+      return { text: want === 'small' ? 'The small classic pet, always.' : want === 'big' ? 'The bigger, detailed pet, always (it takes two more rows).' : 'Bigger when the band has room, small when it does not.' }
     } else if (/^shop$/i.test(args)) {
       return { text: shopText(await readWallet($)) }
     } else if (/^(buy|wear)\s+\S/i.test(args)) {
@@ -3112,6 +3347,7 @@ export const register: Register = (on, options) => {
     const fx = petSim.focus ? focusLabel(petSim.focus, now) : ''
     const C = paletteOf(themeName)
     let strip: RenderChildren = null
+    let stripH = PET_ROWS
     if (isPlaying && (e.surface === 'terminal' || e.surface === 'desktop')) {
       const { Client } = $.ui.resolve(e)
       const columns = Math.max(24, Math.min(160, W - 2))
@@ -3126,19 +3362,26 @@ export const register: Register = (on, options) => {
       strip = <Client key="runner" module="./runner.tsx" props={props} width={columns} height={PET_ROWS + 1} />
     } else if (withStrip && e.surface === 'terminal') {
       const { Raster } = $.ui.resolve(e)
-      const columns = Math.max(SPRITE_W + 2, Math.min(512, W - 2))
+      const hd = petSize === 'big' || (petSize === 'auto' && e.props.maxRows >= HD_MIN_ROWS)
+      if (petSim.hd !== hd) {
+        petSim.hd = hd
+        petSim.lastCells = ''
+      }
+      const columns = Math.max(petW() + 2, Math.min(512, W - 2))
       if (petSim.columns !== columns || !petSim.lastCells) {
         sizeSim(columns)
         petSim.lastCells = petCells(stillFrame(pet, C, columns))
       }
       petSim.requestId = e.requestId
       petSim.isMounted = true
-      strip = <Raster key="pet" columns={columns} rows={PET_ROWS} cells={petSim.lastCells} />
+      stripH = stripRows(hd)
+      strip = <Raster key="pet" columns={columns} rows={stripH} cells={petSim.lastCells} />
     } else if (isTerminal) {
       petSim.isMounted = false
     } else {
       // the desktop app (and any remote band): the same pet as SVG (E5-S01)
       petSim.remote.band = wantsPet
+      if (wantsPet && !petSim.isMounted) petSim.hd = true
       if (wantsPet) {
         const { Svg } = $.ui.resolve(e)
         strip = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(140, W - 2))} alt={`${PETS[pet.kind].emoji} ${petSim.line || pet.name.toUpperCase()}`} />
@@ -3217,7 +3460,7 @@ export const register: Register = (on, options) => {
       ) : null,
     }
     // Row budget: the pet and READY. first (a short terminal, macOS's 80×24, leaves ~8 rows).
-    const room = e.props.maxRows - 1 - (strip ? PET_ROWS + (isPlaying ? 1 : 0) : e.props.isWorking ? 0 : 1)
+    const room = e.props.maxRows - 1 - (strip ? stripH + (isPlaying ? 1 : 0) : e.props.isWorking ? 0 : 1)
     const present = CFG.bandRows.filter(r => rows[r] !== null && rows[r] !== undefined && rows[r] !== false)
     const kept = keepRows(present, room)
     // big pixel letters take 3 rows: only when there is room for them, else the plain banner (E5-S04)
@@ -3267,6 +3510,7 @@ export const register: Register = (on, options) => {
       drawing = <Text color={C.dim} backgroundColor={C.bg} wrap="wrap">{`${PETS[pet.kind].emoji} ${pet.name.toUpperCase()} LIVES IN THE BAND ABOVE THE PROMPT HERE.`}</Text>
     } else {
       petSim.remote.pane = true
+      if (!petSim.isMounted) petSim.hd = true
       const { Svg } = $.ui.resolve(e)
       drawing = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(100, W - 2))} alt={`${PETS[pet.kind].emoji} ${line || pet.name.toUpperCase()}`} />
     }

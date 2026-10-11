@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { breakAfter, focusLabel, focusXp, parseFocus, petPixels, stageOf } from './register'
+import { BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, breakAfter, focusLabel, focusXp, parseFocus, petPixels, rollBox, stageOf } from './register'
+import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
 import { press, step } from './runner'
 
 const run = (command: string, args: string) => ({
@@ -173,7 +174,8 @@ test('the pet walks in a strip at the bottom of the band, not in a pane', async 
   const desk = await $.ui.mount(tallBand('desktop') as never)
   const art = await desk.find({ type: 'Svg' })
   expect(String(art?.props.alt)).toMatch(/🐈 PIXEL/)
-  expect(String(art?.props.source)).toMatch(/^<svg [^>]*shape-rendering="crispEdges"/)
+  // the new look (E10): the pet traced into an outlined cartoon, not squares
+  expect(String(art?.props.source)).toMatch(/^<svg [^>]*>.*stroke-linejoin="round"/)
   await desk.unmount()
 })
 
@@ -192,7 +194,7 @@ test('/pet hides and shows it; /pet crab and /pet name change it', async ($, on)
   expect(await on2.find({ type: 'Raster', key: 'pet' })).toBeDefined()
   await on2.unmount()
 
-  const bad = await $.command.run(run('pet', 'unicorn'))
+  const bad = await $.command.run(run('pet', 'pegasus'))
   expect(bad.text).toContain('Usage: /pet')
 })
 
@@ -726,7 +728,7 @@ test('E4-S03: a joined player\'s score is sent after a turn, with exactly the bo
   const put = calls.find(c => c.url === 'https://board.test/v1/score')
   expect(put?.method).toBe('PUT')
   expect(put?.auth).toBe('Bearer cp_' + 'a'.repeat(64))
-  expect(JSON.parse(put?.body ?? '{}')).toEqual({ xp: 2, level: 1, favPet: 'cat', streak: 1, bestStreak: 1, look: { wearing: [], fg: '#5FE1FF', bg: '#06131F' } })
+  expect(JSON.parse(put?.body ?? '{}')).toEqual({ xp: 2, level: 1, favPet: 'cat', streak: 1, bestStreak: 1, look: { wearing: [], fg: '#5FE1FF', bg: '#06131F', skin: null } })
 })
 
 test('E4-S04/S02: /pet board world shows the board; /pet leave deletes the entry and forgets the key', { options: BOARD } as never, async ($, on) => {
@@ -965,7 +967,7 @@ test('E6-S02: coins buy items; one per slot; wearing toggles; a short purse is r
   expect((await $.command.run(run('pet', 'buy hat'))).text).toBe('Bought the top hat for ◆60, and put it on. ◆40 left.')
   expect((await $.command.run(run('pet', 'buy bow'))).text).toContain('◆25 left')
   // the same slot: the bow replaced the hat
-  expect(store.wallet).toEqual({ coins: 25, owned: ['hat', 'bow'], wearing: ['bow'] })
+  expect(store.wallet).toMatchObject({ coins: 25, owned: ['hat', 'bow'], wearing: ['bow'] })
   expect((await $.command.run(run('pet', 'wear hat'))).text).toBe('Wearing the top hat.')
   expect((await $.command.run(run('pet', 'wear hat'))).text).toBe('Took off the top hat.')
   expect((await $.command.run(run('pet', 'wear lantern'))).text).toContain("You don't have the tết lantern yet")
@@ -1188,4 +1190,99 @@ test('E8-S01: the timer survives a reload; one that ended while Claude Code was 
   expect(store.focus).toBeNull()
   // let the session's own first reads settle before the test ends
   await clock.advance(1000)
+})
+
+// ── E10: a new look ─────────────────────────────────────────────────────────
+test('E10-S01: every animal has a grown-up and a baby sprite that fit, with legs joined to the body', () => {
+  for (const kind of Object.keys(HD) as (keyof typeof HD)[]) {
+    for (const stage of ['adult', 'baby'] as const) {
+      for (const pose of ['walkA', 'walkB', 'sit', 'sleep'] as const) {
+        const rows = hdSprite(kind, stage, pose)
+        expect(rows.length).toBeLessThanOrEqual(HD_H)
+        for (const r of rows) expect(r.length).toBeLessThanOrEqual(stage === 'baby' ? 8 : 12)
+        // a leg pixel touches the body above it or a neighbour that does: no floating dots once traced
+        const lit = (x: number, y: number) => (rows[y]?.[x] ?? '.') !== '.'
+        for (let y = rows.length - 2; y < rows.length; y++) {
+          for (let x = 0; x < rows[y]!.length; x++) {
+            if (lit(x, y)) expect(lit(x, y - 1) || lit(x - 1, y) || lit(x + 1, y)).toBe(true)
+          }
+        }
+      }
+      expect(hdSprite(kind, stage, 'walkA').join('')).toMatch(/e/)
+      expect(hdSprite(kind, stage, 'sleep').join('')).not.toMatch(/e/)
+    }
+  }
+})
+
+test('E10-S02: a sprite traces into one rounded, outlined shape with real eyes; skins recolour it', () => {
+  expect(traceLoops((x, y) => y === 0 && x < 2, 2, 1)).toEqual([[[0, 0], [2, 0], [2, 1], [0, 1]]])
+  const cat = vectorPet({ kind: 'cat', stage: 'adult', pose: 'walkA', mood: 'happy', isBlinking: false })
+  expect(cat.svg).toContain('stroke-linejoin="round"')
+  expect(cat.svg.match(/<circle [^>]*r="0.5"/g)).toHaveLength(2) // two eyes
+  expect(cat.svg).toContain('#f0a040')
+  const ghost = vectorPet({ kind: 'cat', stage: 'adult', pose: 'walkA', mood: 'happy', skin: 'ghost', isBlinking: false })
+  expect(ghost.svg).not.toContain('#f0a040')
+  const asleep = vectorPet({ kind: 'cat', stage: 'adult', pose: 'sleep', mood: 'happy' })
+  expect(asleep.svg).not.toMatch(/<circle [^>]*r="0.5"/)
+  const hat = vectorPet({ kind: 'cat', stage: 'adult', pose: 'sit', mood: 'happy', items: ['hat'], isBlinking: false })
+  expect(hat.svg).toContain('#2b2b2b')
+})
+
+test('E10-S03: the terminal shows the bigger pet when the band has room; /pet size small keeps the classic one', async ($, on) => {
+  const store = repo(on, {})
+  const big = await $.ui.mount(tallBand('terminal') as never)
+  expect((await big.find({ type: 'Raster', key: 'pet' }))?.props.rows).toBe(5)
+  await big.unmount()
+  const short = await $.ui.mount({ ...tallBand('terminal'), props: { ...tallBand('terminal').props, maxRows: 8 } } as never)
+  expect((await short.find({ type: 'Raster', key: 'pet' }))?.props.rows).toBe(3)
+  await short.unmount()
+  expect((await $.command.run(run('pet', 'size small'))).text).toContain('classic')
+  expect(store.petSize).toBe('small')
+  const small = await $.ui.mount(tallBand('terminal') as never)
+  expect((await small.find({ type: 'Raster', key: 'pet' }))?.props.rows).toBe(3)
+  await small.unmount()
+})
+
+// ── E9: blind boxes ─────────────────────────────────────────────────────────
+test('E9-S01: a box rolls its rarity by the odds, and ten without an epic make the next one epic', () => {
+  expect(rollBox(0, 0, 0)).toEqual({ rarity: 'common', loot: { kind: 'item', id: 'flower' } })
+  expect(rollBox(0.7, 0.5, 0).rarity).toBe('rare')
+  expect(rollBox(0.9, 0, 0)).toEqual({ rarity: 'epic', loot: { kind: 'item', id: 'halo' } })
+  expect(rollBox(0.99, 0.99, 0)).toEqual({ rarity: 'legendary', loot: { kind: 'pet', id: 'axolotl' } })
+  expect(rollBox(0, 0.3, BOX_PITY - 1).rarity).toBe('epic')
+  expect(Object.values(BOX_ODDS).reduce((a, b) => a + b, 0)).toBe(100)
+})
+
+test('E9-S01: levelling up earns a blind box; /pet box open shakes it in the band, then shows the find', async ($, on) => {
+  const { store, toasts, clock } = timed(on, { petXp: 14 })
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't', reason: 'answer' } as never)
+  expect(toasts).toContain('▶ +1 BLIND BOX FOR LEVELLING UP · /pet box open')
+  expect((store.wallet as { boxes: number }).boxes).toBe(4) // 3 to start with, 1 for LV2
+  expect((await $.command.run(run('pet', 'box'))).text).toContain('BLIND BOXES · 4 to open')
+
+  const opened = await $.command.run(run('pet', 'box open'))
+  expect(opened.text).toContain('Opening a blind box')
+  expect((store.wallet as { boxes: number }).boxes).toBe(3)
+  expect((await $.command.run(run('pet', 'stats'))).text).toMatch(/PIXEL|LV2/)
+  await clock.advance(BOX_REVEAL_MS)
+  const found = toasts.find(t => t.startsWith('▶ BLIND BOX: '))
+  expect(found).toMatch(/COMMON|RARE|EPIC|LEGENDARY/)
+  const w = store.wallet as { owned: string[]; skins: string[]; pets: string[]; coins: number }
+  expect(w.owned.length + w.skins.length + w.pets.length + (w.coins > 0 ? 1 : 0)).toBeGreaterThan(0)
+  expect((await $.command.run(run('pet', 'collection'))).text).toContain('COLLECTION')
+})
+
+test('E9-S02: box animals and skins need finding first; once found they can be used', async ($, on) => {
+  const store = repo(on, {})
+  expect((await $.command.run(run('pet', 'dragon'))).text).toContain('only hatches from a blind box')
+  expect((await $.command.run(run('pet', 'skin ghost'))).text).toContain("haven't found")
+  expect((await $.command.run(run('pet', 'buy halo'))).text).toContain('only comes out of a blind box')
+  expect((await $.command.run(run('pet', 'list'))).text).toContain('🔒 dragon')
+  store.wallet = { coins: 0, owned: ['halo'], wearing: [], boxes: 0, skins: ['ghost'], skin: null, pets: ['dragon'], sinceEpic: 0 }
+  expect((await $.command.run(run('pet', 'dragon'))).text).not.toContain('only hatches')
+  expect((await $.command.run(run('pet', 'skin ghost'))).text).toBe('Now ghost.')
+  expect((await $.command.run(run('pet', 'wear halo'))).text).toBe('Wearing the halo.')
+  expect(store.wallet).toMatchObject({ skin: 'ghost', wearing: ['halo'] })
+  expect((await $.command.run(run('pet', 'collection'))).text).toContain('🐉 dragon')
 })

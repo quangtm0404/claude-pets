@@ -118,7 +118,7 @@ test('E4-S03: impossible scores are refused', async () => {
   const a = await join('gho_alice')
   const send = (body: unknown, now = T0) => call('PUT', '/v1/score', { key: a.apiKey, body, now })
   assert.equal((await send(score(479, { level: 9 }))).status, 422, 'level must match XP')
-  assert.equal((await send(score(479, { favPet: 'dragon' }))).status, 422, 'unknown pet')
+  assert.equal((await send(score(479, { favPet: 'pegasus' }))).status, 422, 'unknown pet')
   assert.equal((await send(score(479, { streak: 6, bestStreak: 5 }))).status, 422, 'best below streak')
   assert.equal((await send(score(479, { xp: 4.5, level: 1 }))).status, 422, 'whole XP')
   assert.equal((await send(score(LIMITS.firstScoreMax + 1))).status, 422, 'first score capped')

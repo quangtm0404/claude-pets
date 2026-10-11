@@ -576,3 +576,77 @@ So that it has a personality.
 | Off by default, the rate limit and what is sent asserted | testing | ⬜ To do |
 
 </details>
+
+## P5 · Surprises and a new look - ✅ Done
+
+### E9 · Blind boxes - ✅ Done
+
+**Outcome.** Every milestone comes with a surprise worth opening.
+
+<details><summary><b>E9-S01</b> - as a <b>player</b>, I want <b>a blind box for each level up, achievement and focus set</b> · ✅ Done · 5 pts</summary>
+
+So that progress has a moment of surprise.
+
+**Acceptance criteria**
+- One box for each level gained, each achievement and every fourth focus round; three to start with
+- `/pet box` shows how many and the odds; `/pet box open` opens one: the pet shakes it in the band, then the find pops out with a toast and a chime
+- Rarities common 60%, rare 27%, epic 10%, legendary 3%; ten boxes without an epic make the next one epic; a find you have is worth coins instead
+
+| Task | Kind | Status |
+|---|---|---|
+| Boxes in the wallet, the roll, the opening in the band | technical | ✅ Done |
+| Odds, pity, earning and opening asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E9-S02</b> - as a <b>player</b>, I want <b>finds I can't buy: items, skins and animals</b> · ✅ Done · 5 pts</summary>
+
+So that boxes hold something the shop doesn't.
+
+**Acceptance criteria**
+- Box-only items (flower crown, headphones, bandana, hero cape, wizard hat, rainbow scarf, halo) can be worn but not bought
+- Skins (pastel, shadow, ghost, golden, galaxy) recolour any animal: `/pet skin <name>|none`
+- The dragon, unicorn and axolotl only hatch from a box; `/pet list` shows them locked until then
+- `/pet collection` lists what was found; the badge shows the skin and items
+
+| Task | Kind | Status |
+|---|---|---|
+| Items, skins, box animals, collection and the badge | technical | ✅ Done |
+| Locked until found, then usable, asserted | testing | ✅ Done |
+
+</details>
+
+### E10 · A new look - ✅ Done
+
+**Outcome.** The pets look drawn, not just blocky.
+
+<details><summary><b>E10-S01</b> - as a <b>player</b>, I want <b>more detailed pets</b> · ✅ Done · 8 pts</summary>
+
+So that my pet has a face and a shape I can love.
+
+**Acceptance criteria**
+- Every animal has a 12×8 grown-up sprite and its own 8×5 baby, with legs joined to the body
+- The terminal shows them when the band has room and the small classic pet when it is short; `/pet size auto|big|small`
+- Items sit on the head, face, neck, hand or back of any animal
+
+| Task | Kind | Status |
+|---|---|---|
+| Sprites for 17 animals, anchors for items | technical | ✅ Done |
+| Sizes, joined legs and the size setting asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E10-S02</b> - as a <b>player</b>, I want <b>my pet drawn as a cartoon where the screen allows</b> · ✅ Done · 5 pts</summary>
+
+So that it looks its best in the desktop app, VS Code and on my badge.
+
+**Acceptance criteria**
+- The sprite is traced into one rounded, outlined shape with its patches of colour, real eyes with a glint, blinks, lids when asleep, cross brows and a blush
+- Used by the desktop band, the VS Code pet pane, the diary card and the badge; the sky, coins and bugs turn soft too
+
+| Task | Kind | Status |
+|---|---|---|
+| Tracer, rounded paths and the cartoon pet | technical | ✅ Done |
+| Shape, eyes, skins and items asserted | testing | ✅ Done |
+
+</details>

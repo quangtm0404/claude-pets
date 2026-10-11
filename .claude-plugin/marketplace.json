@@ -11,7 +11,7 @@
       "name": "pixel-pets",
       "source": "./plugins/pixel-pets",
       "description": "A pixel pet game and retro dashboard for Claude Code (terminal, desktop app and VS Code): plan usage, weather, backlog story, your own theme colours, pet voices and guardrails",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "category": "productivity"
     }
   ]

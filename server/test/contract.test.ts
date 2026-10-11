@@ -30,7 +30,10 @@ test('the plugin sends exactly the fields the service reads', () => {
 
 test('the look the plugin sends is one the service keeps (E7)', () => {
   assert.ok(plugin.includes('look: await boardLook($)'), 'the score carries the look')
-  assert.ok(/return \{ wearing: petSim\.wearing, fg: C\.fg, bg: C\.bg \}/.test(plugin), 'boardLook() shape')
-  assert.deepEqual(parseLook({ wearing: ['hat', 'scarf'], fg: '#5FE1FF', bg: '#06131F' }), { wearing: ['hat', 'scarf'], fg: '#5FE1FF', bg: '#06131F' })
+  assert.ok(/return \{ wearing: petSim\.wearing, fg: C\.fg, bg: C\.bg, skin: petSim\.skin \}/.test(plugin), 'boardLook() shape')
+  assert.deepEqual(parseLook({ wearing: ['hat', 'scarf'], fg: '#5FE1FF', bg: '#06131F', skin: null }), { wearing: ['hat', 'scarf'], fg: '#5FE1FF', bg: '#06131F' })
+  // a blind box's finds (E9): a skin and box-only items are kept; a made-up skin refuses the look
+  assert.deepEqual(parseLook({ wearing: ['halo'], fg: '#5FE1FF', bg: '#06131F', skin: 'galaxy' }), { wearing: ['halo'], fg: '#5FE1FF', bg: '#06131F', skin: 'galaxy' })
+  assert.equal(parseLook({ wearing: [], fg: '#5FE1FF', bg: '#06131F', skin: 'rainbowzebra' }), null)
   assert.ok(plugin.includes('/v1/pet/${encodeURIComponent(who)}') && plugin.includes('`${link.url}/v1/me`'), 'visit routes')
 })

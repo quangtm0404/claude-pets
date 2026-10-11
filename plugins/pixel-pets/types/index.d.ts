@@ -71,6 +71,7 @@ export type WeatherNow = {
 export type PetKind =
   | 'cat' | 'dog' | 'crab' | 'shark' | 'turtle' | 'mouse' | 'fox'
   | 'orca' | 'whale' | 'dolphin' | 'giraffe' | 'tiger' | 'squirrel' | 'penguin'
+  | 'dragon' | 'unicorn' | 'axolotl'
 export type Pet = { kind: PetKind; name: string }
 
 declare module 'claude-code' {
