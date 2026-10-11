@@ -14,6 +14,14 @@ A pixel pet game and retro dashboard for [Claude Code](https://claude.com/claude
  ▔▔ ♥♥♡♡♡ LV3 XP 042 ◆7 · PIXEL IS GRUMPY · 5H 82% ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 ```
 
+Players on the world board get a live badge for their GitHub profile (`/pet card`), drawn with the pet's stage, what it wears and their theme:
+
+<p>
+  <img src="docs/img/badge-whale-ice.svg" alt="A legend whale wearing a crown and shades, LV27, on the ice theme" width="420">
+  <img src="docs/img/badge-fox-amber.svg" alt="An adult fox in a scarf and hat, LV14, on the amber theme" width="420">
+  <img src="docs/img/badge-cat-paper.svg" alt="A baby cat with a bow, LV6, on the paper theme" width="420">
+</p>
+
 > **Early access.** Claude Pets is a *mod*: a plugin of function hooks. Mods are an early-access Claude Code feature, so they have to be available on your account for Claude Pets to load.
 >
 > **Not affiliated with Anthropic.** Claude Pets (plugin id `pixel-pets`) is an independent community project; it is not made, endorsed or supported by Anthropic.
@@ -94,7 +102,10 @@ The board runs at `https://claude-pets-board.claude-pets-leaderboard.workers.dev
 
 ### Share your pet (opt-in, for players on the world board)
 - **`/pet card`**: a live badge for your GitHub profile README, drawn by the board in your theme's colours with what your pet wears. It updates as you play; `/pet leave` removes it.
-  `[![my Claude Pet](https://claude-pets-board.claude-pets-leaderboard.workers.dev/card/<you>.svg)](https://github.com/quangtm0404/claude-pets)`
+  ```markdown
+  [![my Claude Pet](https://claude-pets-board.claude-pets-leaderboard.workers.dev/card/<you>.svg)](https://github.com/quangtm0404/claude-pets)
+  ```
+  It looks like the badges at the top of this page. The board refreshes it every 5 minutes, and GitHub may cache it a little longer.
 - **`/pet visit <github login>`**: your pet plays with a friend's in your band for a minute. The first visit a day between two players gives you both +5 XP; they hear about it after their next turn. `/pet visits off` stops others visiting you.
 - **`/pet diary`**: today in your pet's words (coins, bugs, tests, turns, helpers, the runner, visits, the stories you worked on, the weather). `/pet diary card` copies it as an SVG picture. The diary stays on your machine.
 
