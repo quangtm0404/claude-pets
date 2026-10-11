@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { PluginOptions, RenderChildren, SessionUsage } from 'claude-code'
+import type { RunnerProps } from './runner'
 
 import type {
   Failure, FontName, GitInfo, LogLine, PetKind, Story, StoryStatus, StoryTask, TestRun, ThemeName, Usage, UsageWindow,
@@ -402,6 +403,8 @@ const isThemeName = (x: unknown): x is ThemeName => typeof x === 'string' && Obj
 const font = atom({ plugin: 'pixel-pets', key: 'font' } as const, 'plain')
 /** The pet drawn as SVG for the desktop app, VS Code and phones, redrawn as it moves (E5-S01). */
 const petArt = atom({ plugin: 'pixel-pets', key: 'petArt' } as const, '')
+/** The runner game is offered in the band (E6-S01). */
+const runnerOn = atom({ plugin: 'pixel-pets', key: 'runnerOn' } as const, false)
 const storyId = atom({ plugin: 'pixel-pets', key: 'storyId' } as const, null)
 const story = atom({ plugin: 'pixel-pets', key: 'story' } as const, null)
 const storyError = atom({ plugin: 'pixel-pets', key: 'storyError' } as const, null)
@@ -781,6 +784,7 @@ const PET_ROWS = 3 // 2 rows of pixels (4 px) + the ground row, which carries th
 // The pet needs its strip and the READY. line; info rows fill whatever room is left.
 const PET_MIN_ROWS = PET_ROWS + 1
 const SPRITE_W = 7
+const SPRITE_ROWS = 4
 
 type Pose = 'walkA' | 'walkB' | 'sit' | 'sleep'
 export type Mood = 'happy' | 'grumpy' | 'furious' | 'gameover'
@@ -920,10 +924,60 @@ export const PETS: Record<PetKind, PetDef> = {
 export const PET_KINDS = Object.keys(PETS) as PetKind[]
 export const isPetKind = (x: unknown): x is PetKind => typeof x === 'string' && (PETS as Record<string, unknown>)[x] !== undefined
 
-/** The 4 pixel rows of one pose and mood, facing left. */
-/** A helper (a subagent's pet): the parent's front half, 5×3 pixels (face, body, legs). */
-export function babySprite(kind: PetKind, pose: Pose): string[] {
-  return sprite(kind, pose).slice(1).map(row => row.slice(0, KID_W))
+// ── Growing up (E6-S03) ──────────────────────────────────────────────────────
+// A baby until LV10 (the helpers' 5×3 shape), then the full sprite; legends
+// twinkle, and mythic pets grow wings. XP is the player's, so switching animals
+// never undoes a stage.
+export type Stage = 'baby' | 'adult' | 'legend' | 'mythic'
+export const STAGES: { stage: Stage; at: number }[] = [
+  { stage: 'baby', at: 1 }, { stage: 'adult', at: 10 }, { stage: 'legend', at: 25 }, { stage: 'mythic', at: 50 },
+]
+export const stageOf = (level: number): Stage => STAGES.filter(x => level >= x.at).pop()?.stage ?? 'baby'
+export const nextStage = (level: number) => STAGES.find(x => x.at > level) ?? null
+
+// ── The coin shop (E6-S02) ───────────────────────────────────────────────────
+// Each item is a few pixels placed from the pet's eye: [forward, down, colour],
+// forward being the way the pet faces. One item per slot.
+export type ItemId = 'bow' | 'scarf' | 'shades' | 'hat' | 'lantern' | 'crown'
+type Slot = 'head' | 'face' | 'neck' | 'hand'
+export const ITEMS: Record<ItemId, { name: string; price: number; slot: Slot; px: [number, number, number][] }> = {
+  bow: { name: 'Pink bow', price: 15, slot: 'head', px: [[-2, -1, 0xff7eb6], [-3, -1, 0xff7eb6]] },
+  scarf: { name: 'Red scarf', price: 25, slot: 'neck', px: [[-1, 1, 0xe53935], [-2, 1, 0xe53935], [-3, 2, 0xb71c1c]] },
+  shades: { name: 'Sunglasses', price: 40, slot: 'face', px: [[0, 0, 0x33ccff], [-1, 0, 0x111111], [1, 0, 0x111111]] },
+  hat: { name: 'Top hat', price: 60, slot: 'head', px: [[1, -1, 0x2b2b2b], [0, -1, 0x2b2b2b], [-1, -1, 0x2b2b2b], [0, -2, 0x2b2b2b]] },
+  lantern: { name: 'Tết lantern', price: 88, slot: 'hand', px: [[1, 1, 0xe53935], [1, 2, 0xffc107]] },
+  crown: { name: 'Crown', price: 200, slot: 'head', px: [[1, -1, 0xffd23f], [0, -1, 0xff3b3b], [-1, -1, 0xffd23f], [0, -2, 0xffd23f]] },
+}
+export const ITEM_IDS = Object.keys(ITEMS) as ItemId[]
+export const isItemId = (x: unknown): x is ItemId => typeof x === 'string' && Object.hasOwn(ITEMS, x)
+
+/** Where the eye is in a sprite (source coordinates, facing left), or null. */
+function eyeOf(rows: string[]): [number, number] | null {
+  for (let y = 0; y < rows.length; y++) {
+    const x = rows[y]!.search(/[eE]/)
+    if (x >= 0) return [x, y]
+  }
+  return null
+}
+
+/** Pixels drawn over the pet in its own coordinates: stage effects, then what it wears. */
+export function extrasFor(kind: PetKind, stage: Stage, items: ItemId[], tick: number): [number, number, number][] {
+  const out: [number, number, number][] = []
+  const shape = stage === 'baby' ? babySprite(kind, 'walkA') : sprite(kind, 'walkA')
+  const sw = shape[0]?.length ?? SPRITE_W
+  if (stage === 'legend' || stage === 'mythic') out.push(tick % 10 < 5 ? [-1, 0, 0xfff6a0] : [sw, 1, 0xfff6a0])
+  if (stage === 'mythic') {
+    const up = tick % 6 < 3
+    out.push([sw - 3, up ? 0 : 1, 0xf5f5ff], [sw - 2, up ? 0 : 1, 0xf5f5ff], [sw - 1, up ? 0 : 1, 0xdde4ff])
+  }
+  const eye = eyeOf(shape)
+  if (eye) for (const id of items) for (const [fwd, dy, c] of ITEMS[id].px) out.push([eye[0] - fwd, eye[1] + dy, c])
+  return out
+}
+
+/** A helper (a subagent's pet), or a baby: the full sprite's front half, 5×3 pixels (face, body, legs). */
+export function babySprite(kind: PetKind, pose: Pose, mood: Mood = 'happy'): string[] {
+  return sprite(kind, pose, mood).slice(1).map(row => row.slice(0, KID_W))
 }
 const KID_W = 5
 
@@ -981,6 +1035,12 @@ export type PetFrame = {
   hud: HudSegment[]
   /** Helper pets: one per running subagent; `tag` is drawn above it. */
   kids?: { x: number; dir: 1 | -1; pose: Pose; tag: string; tagColor: number }[]
+  /** Its stage (E6-S03); absent means adult. */
+  stage?: Stage
+  /** What it wears (E6-S02). */
+  items?: ItemId[]
+  /** A rocket flame under it (E6-S04). */
+  flame?: boolean
 }
 
 const COIN = 0xffd23f, COIN_SHINE = 0xfff6a0, BUG = 0xb04cff, BUG_LEGS = 0x6a1fb0
@@ -1051,12 +1111,23 @@ export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: n
     })
   }
   const x0 = Math.round(f.x), y0 = -f.lift
-  sprite(f.kind, f.pose, f.mood).forEach((row, ry) => {
-    for (let rx = 0; rx < SPRITE_W; rx++) {
-      const c = colors[row[f.dir === 1 ? SPRITE_W - 1 - rx : rx] ?? '.']
-      if (c !== undefined) set(x0 + rx, y0 + ry, c)
+  const stage = f.stage ?? 'adult'
+  const rows = stage === 'baby' ? babySprite(f.kind, f.pose, f.mood) : sprite(f.kind, f.pose, f.mood)
+  const sw = rows[0]?.length ?? SPRITE_W, top = y0 + (SPRITE_ROWS - rows.length)
+  // the sprite is drawn facing left; facing right mirrors it
+  const at = (sx: number) => x0 + (f.dir === 1 ? sw - 1 - sx : sx)
+  rows.forEach((row, sy) => {
+    for (let sx = 0; sx < sw; sx++) {
+      const c = colors[row[sx] ?? '.']
+      if (c !== undefined) set(at(sx), top + sy, c)
     }
   })
+  for (const [sx, sy, c] of extrasFor(f.kind, stage, f.items ?? [], f.tick ?? 0)) set(at(sx), top + sy, c)
+  if (f.flame) {
+    const mid = Math.floor(sw / 2), t = f.tick ?? 0
+    set(at(mid), top + rows.length, t % 2 ? 0xff9800 : 0xffeb3b)
+    set(at(mid + 1), top + rows.length, t % 2 ? 0xffeb3b : 0xff5722)
+  }
   return { px, W, H, x0 }
 }
 
@@ -1211,7 +1282,13 @@ const petSim = {
   remote: { band: false, pane: false },
   lastArt: '',
   sitUntil: 0,
-  react: null as null | { glyph: string; tone: Tone; until: number; jump: boolean },
+  react: null as null | { glyph: string; tone: Tone; until: number; jump: boolean; text?: string; kind?: 'dance' | 'rocket' },
+  /** A merge conflict seen and not yet resolved (E6-S04). */
+  isConflict: false,
+  /** A command running now: since when, and what (E6-S04). */
+  toolSince: null as number | null,
+  toolName: '',
+  wearing: [] as ItemId[],
   ballX: null as number | null,
   lastActive: 0,
   isWorking: false,
@@ -1234,8 +1311,8 @@ const petSim = {
   kidXp: 0,
 }
 
-function petReact(glyph: string, tone: Tone, ms: number, now: number, jump = false) {
-  petSim.react = { glyph, tone, until: now + ms, jump }
+function petReact(glyph: string, tone: Tone, ms: number, now: number, jump = false, more: { text?: string; kind?: 'dance' | 'rocket' } = {}) {
+  petSim.react = { glyph, tone, until: now + ms, jump, ...more }
 }
 
 /** The pet, or the settings' starting pet until one has been chosen or named. */
@@ -1348,17 +1425,113 @@ async function gainXp($: EngineInterface, n: number, why: XpReason = 'other', co
   petSim.xp += n
   const after = levelOf(petSim.xp)
   await recordXp($, n, why, count, after)
+  if (why === 'coin') await addCoins($, count)
   if (after > before) {
     const pet = await readPet($)
-    petReact('★', 'warn', 3000, await $.clock.now(), true)
-    $.ui.toast(`▶ LEVEL UP! ${pet.name.toUpperCase()} IS NOW LV${after}`, { timeoutMs: 6000 })
+    const grew = stageOf(after) !== stageOf(before) ? stageOf(after) : null
+    petReact('★', 'warn', grew ? 6000 : 3000, await $.clock.now(), true, grew ? { text: `GREW UP: ${grew.toUpperCase()}!` } : {})
+    $.ui.toast(grew
+      ? `▶ LEVEL UP! ${pet.name.toUpperCase()} IS LV${after} AND GREW UP: ${grew.toUpperCase()}!`
+      : `▶ LEVEL UP! ${pet.name.toUpperCase()} IS NOW LV${after}`, { timeoutMs: 6000 })
     void petVoice($)
     await saveXp($)
   }
 }
 
+// ── Wallet (E6-S02): coins to spend, kept apart from lifetime coins ─────────
+export type Wallet = { coins: number; owned: ItemId[]; wearing: ItemId[] }
+
+async function readWallet($: EngineInterface): Promise<Wallet> {
+  const w = (await $.store.get('wallet')) as Partial<Wallet> | undefined
+  if (w && typeof w.coins === 'number') {
+    return { coins: w.coins, owned: (w.owned ?? []).filter(isItemId), wearing: (w.wearing ?? []).filter(isItemId) }
+  }
+  // the first time: every coin collected so far is spendable
+  const p = (await $.store.get('profile')) as Profile | undefined
+  return { coins: p?.totals?.coins ?? 0, owned: [], wearing: [] }
+}
+
+async function writeWallet($: EngineInterface, w: Wallet) {
+  await $.store.set('wallet', w)
+  petSim.wearing = w.wearing
+}
+
+async function addCoins($: EngineInterface, n: number) {
+  const w = await readWallet($)
+  await writeWallet($, { ...w, coins: w.coins + n })
+}
+
+export function shopText(w: Wallet): string {
+  return [
+    `COIN SHOP · you have ◆${w.coins}`,
+    ...ITEM_IDS.map(id => {
+      const it = ITEMS[id]
+      const mark = w.wearing.includes(id) ? 'WEARING' : w.owned.includes(id) ? 'owned' : `◆${it.price}`
+      return `  ${id.padEnd(8)} ${it.name.padEnd(12)} ${mark}`
+    }),
+    '/pet buy <item> · /pet wear <item> (again to take it off) · /pet wear none',
+  ].join('\n')
+}
+
+/** Buying or wearing; returns what to say. */
+export async function shopCommand($: EngineInterface, verb: 'buy' | 'wear', what: string): Promise<string> {
+  const w = await readWallet($)
+  const id = what.toLowerCase().replace(/[^a-z]/g, '')
+  if (verb === 'wear' && id === 'none') {
+    await writeWallet($, { ...w, wearing: [] })
+    return 'Took everything off.'
+  }
+  if (!isItemId(id)) return `No item called "${what}". ${ITEM_IDS.join(' · ')}`
+  const it = ITEMS[id]
+  if (verb === 'buy') {
+    if (w.owned.includes(id)) return `You already have the ${it.name.toLowerCase()}. /pet wear ${id}`
+    if (w.coins < it.price) return `The ${it.name.toLowerCase()} costs ◆${it.price}; you have ◆${w.coins}. Coins drop for every tool call that works.`
+    const wearing = [...w.wearing.filter(x => ITEMS[x].slot !== it.slot), id]
+    await writeWallet($, { coins: w.coins - it.price, owned: [...w.owned, id], wearing })
+    return `Bought the ${it.name.toLowerCase()} for ◆${it.price}, and put it on. ◆${w.coins - it.price} left.`
+  }
+  if (!w.owned.includes(id)) return `You don't have the ${it.name.toLowerCase()} yet: /pet buy ${id} (◆${it.price}).`
+  if (w.wearing.includes(id)) {
+    await writeWallet($, { ...w, wearing: w.wearing.filter(x => x !== id) })
+    return `Took off the ${it.name.toLowerCase()}.`
+  }
+  await writeWallet($, { ...w, wearing: [...w.wearing.filter(x => ITEMS[x].slot !== it.slot), id] })
+  return `Wearing the ${it.name.toLowerCase()}.`
+}
+
+/** What the pet is reacting to right now, for /pet stats (E6-S04). */
+async function nowLine($: EngineInterface): Promise<string[]> {
+  if (petSim.isConflict) return ['Now: PUZZLED BY A MERGE CONFLICT (resolve it and commit)']
+  const r = petSim.react
+  return r?.text && r.until > (await $.clock.now()) ? [`Now: ${r.text}`] : []
+}
+
+// ── The runner game (E6-S01) ─────────────────────────────────────────────────
+// Offered in the band once a turn has run a few seconds; the game itself runs in
+// runner.tsx, on the surface. Its best run scores XP, at most RUNNER_XP_CAP a turn.
+const RUNNER_AFTER_MS = 8000
+export const RUNNER_XP_CAP = 20
+const game = { live: 0, credited: 0, best: 0, timer: null as null | { cancel: () => void } }
+
+async function creditRun($: EngineInterface, score: number) {
+  if (score > game.best) {
+    game.best = score
+    await $.store.set('runnerBest', score)
+  }
+  const gain = Math.min(score, RUNNER_XP_CAP - game.credited)
+  if (gain > 0) {
+    game.credited += gain
+    await gainXp($, gain, 'game')
+  }
+}
+
+const LONG_TOOL_MS = 60_000
+const PUSH_RE = /\bgit\s+push\b/
+const CONFLICT_RE = /CONFLICT \(|Automatic merge failed|could not apply [0-9a-f]+|Unmerged paths/
+const SETTLE_RE = /\bgit\s+(commit|status|merge\s+--(continue|abort)|rebase\s+--(continue|abort|skip)|cherry-pick\s+--(continue|abort))\b/
+
 // ── Profile, pet board, streaks and achievements (E3) ───────────────────────
-export type XpReason = 'coin' | 'bug' | 'helper' | 'green' | 'turn' | 'ball' | 'other'
+export type XpReason = 'coin' | 'bug' | 'helper' | 'green' | 'turn' | 'ball' | 'game' | 'other'
 export type Profile = {
   since: string
   totals: { xp: number; coins: number; bugs: number; helpers: number; green: number; turns: number; balls: number }
@@ -1650,6 +1823,7 @@ function stillFrame(pet: { kind: PetKind; name: string }, C: Palette, columns: n
     bubble: null, ballX: petSim.ballX, coins: petSim.coins, bugs: petSim.bugs, sparkle: false,
     bg: C.bg, ground: C.dim, cursor: null,
     hud: hud(C, name, petSim.line || `${name} THE ${pet.kind.toUpperCase()}`),
+    stage: stageOf(levelOf(petSim.xp)), items: petSim.wearing,
   }
 }
 
@@ -1699,7 +1873,7 @@ async function petTick($: EngineInterface) {
   const nearestBug = s.bugs.slice().sort((a, b) => Math.abs(a.x - s.x) - Math.abs(b.x - s.x))[0]
   const nearestCoin = s.coins.slice().sort((a, b) => Math.abs(a - s.x) - Math.abs(b - s.x))[0]
 
-  let pose: Pose = 'sit', lift = 0, speed = 0, line: string
+  let pose: Pose = 'sit', lift = 0, speed = 0, line: string, flame = false
   let bubble: PetFrame['bubble'] = null
   const walk = (every: number) => (Math.floor(s.tick / every) % 2 ? 'walkA' : 'walkB') as Pose
   const face = (target: number) => {
@@ -1724,10 +1898,26 @@ async function petTick($: EngineInterface) {
   } else if (s.react) {
     lift = s.react.jump && s.tick % 4 < 2 ? 1 : 0
     bubble = { glyph: s.react.glyph, color: hex(C[s.react.tone]) }
-    line = s.react.glyph === '♥' ? `${name} IS HAPPY`
+    line = s.react.text ? `${name} ${s.react.text}`
+      : s.react.glyph === '♥' ? `${name} IS HAPPY`
       : s.react.glyph === '★' ? `${name} LEVELLED UP`
       : s.react.glyph === '*' ? `${name} SQUASHED A BUG`
       : `${name} SAW AN ERROR`
+    if (s.react.kind === 'dance') {
+      pose = walk(1)
+      if (s.tick % 3 === 0) s.dir = s.dir === 1 ? -1 : 1
+    }
+    if (s.react.kind === 'rocket') {
+      lift = 1
+      flame = true
+    }
+  } else if (s.toolSince !== null && now - s.toolSince > LONG_TOOL_MS) {
+    pose = 'sleep'
+    bubble = { glyph: ['.', ':', '⁝'][Math.floor(s.tick / 6) % 3] ?? '.', color: hex(C.dim) }
+    line = `${name} NAPS WHILE ${s.toolName.toUpperCase()} RUNS · ${fmtDuration(now - s.toolSince)}`
+  } else if (s.isConflict) {
+    bubble = { glyph: '?', color: hex(C.warn) }
+    line = `${name} IS PUZZLED BY A MERGE CONFLICT`
   } else if (nearestBug && !s.isWorking) {
     speed = s.mood === 'happy' ? 0.8 : 1.0
     face(nearestBug.x)
@@ -1827,6 +2017,7 @@ async function petTick($: EngineInterface) {
     })),
     cursor: !s.isWorking && s.tick % 8 < 4 ? { color: hex(C.fg) } : null,
     hud: hud(C, name, line),
+    stage: stageOf(levelOf(s.xp)), items: s.wearing, flame,
   }
   if (s.isMounted) {
     const cells = petCells(frame)
@@ -2197,7 +2388,10 @@ export const PET_HELP = [
   '  /pet list · /pet <animal>  the 14 animals; switch (XP and name stay)',
   '  /pet name [Mochi]          rename it (no name: pick from ideas)',
   '  /pet ball · /pet pat       play with it',
-  '  /pet stats                 level, XP, mood, coins, helpers',
+  '  /pet stats                 level, stage, XP, mood, coins, helpers',
+  '  /pet shop                  spend coins: bow, scarf, shades, hat, lantern, crown',
+  '  /pet buy <item> · /pet wear <item>|none   buy it; put it on or take it off',
+  '  (while Claude works)       click the runner in the band, then space to jump the bugs',
   '  /pet pane                  the pet in a pane of its own (VS Code opens it by itself)',
   '',
   'WEATHER',
@@ -2308,6 +2502,9 @@ export const register: Register = (on, options) => {
       }
     }
     if ((await $.store.get('petShown')) === false) await update($, petShown, () => false)
+    petSim.wearing = (await readWallet($)).wearing
+    const best = await $.store.get('runnerBest')
+    if (typeof best === 'number') game.best = best
     if ((await $.store.get('chimeOn')) === false) await update($, chimeOn, () => false)
     void refreshGit($)
     $.clock.every(10000, () => void refreshGit($))
@@ -2431,12 +2628,19 @@ export const register: Register = (on, options) => {
       return {
         text: [
           `${pet.name} the ${pet.kind} · LV${lv} · XP ${petSim.xp} (LV${lv + 1} at ${nextAt})`,
+          `Stage: ${stageOf(lv).toUpperCase()}${nextStage(lv) ? ` (${nextStage(lv)!.stage.toUpperCase()} at LV${nextStage(lv)!.at})` : ' (fully grown)'}${petSim.wearing.length ? ` · wearing: ${petSim.wearing.map(i => ITEMS[i].name.toLowerCase()).join(', ')}` : ''}`,
+          ...(await nowLine($)),
           `Mood: ${petSim.mood.toUpperCase()}${petSim.limitLabel ? ` (${petSim.limitLabel}${petSim.resetText ? `, resets in ${petSim.resetText}` : ''})` : ''}`,
           `This session: ◆${petSim.collected} coins · ${petSim.bugs.length} bug(s) loose`,
           `Helpers: ${petSim.kids.filter(k => k.state === 'work').length} out working${petSim.kids.length ? ` (${petSim.kids.map(k => `#${k.n} ${k.label || 'subagent'}: ${k.xp} XP`).join(', ')})` : ''} · ${petSim.kidsHome} came home (+${petSim.kidXp} XP)`,
-          'XP: +1 coin (a tool call that worked) · +5 bug squashed (an error) · +10 green test run · +2 per turn · +2 ball · helpers: +1 per subagent call that worked, +5 when its job is done',
+          'XP: +1 coin (a tool call that worked) · +5 bug squashed (an error) · +10 green test run · +2 per turn · +2 ball · runner: +1 a bug jumped, up to 20 a turn · helpers: +1 per subagent call that worked, +5 when its job is done',
         ].join('\n'),
       }
+    } else if (/^shop$/i.test(args)) {
+      return { text: shopText(await readWallet($)) }
+    } else if (/^(buy|wear)\s+\S/i.test(args)) {
+      const [verb, ...rest] = args.split(/\s+/)
+      return { text: await shopCommand($, verb!.toLowerCase() as 'buy' | 'wear', rest.join(' ')) }
     } else if (/^weather\b/i.test(args)) {
       return weatherCommand($, args.replace(/^weather\s*/i, ''))
     } else if (/^(help|\?|commands)$/i.test(args)) {
@@ -2601,6 +2805,26 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     isWorking = true
     petSim.isWorking = true
+    game.live = 0
+    game.credited = 0
+    game.timer?.cancel()
+    game.timer = $.clock.after(RUNNER_AFTER_MS, () => {
+      if (isWorking) void update($, runnerOn, () => true)
+    })
+    return next(e)
+  })
+
+  // the runner's scores (E6-S01)
+  on('ui.message', async ($, e, next) => {
+    if (e.element === 'runner') {
+      const d = e.data as { type?: string; score?: number }
+      const score = typeof d.score === 'number' ? Math.max(0, Math.floor(d.score)) : 0
+      if (d.type === 'score') game.live = score
+      if (d.type === 'over') {
+        game.live = 0
+        await creditRun($, score)
+      }
+    }
     return next(e)
   })
 
@@ -2609,6 +2833,11 @@ export const register: Register = (on, options) => {
       isWorking = false
       petSim.isWorking = false
       petSim.lastActive = await $.clock.now()
+      game.timer?.cancel()
+      await update($, runnerOn, () => false)
+      // a run still going when the turn ends counts as it stands
+      if (game.live > 0) await creditRun($, game.live)
+      game.live = 0
       const u = e.usage
       if (u) await update($, tokens, n => n + u.input_tokens + u.output_tokens + u.cache_creation_input_tokens)
       await update($, turns, n => n + 1)
@@ -2644,7 +2873,14 @@ export const register: Register = (on, options) => {
       state: 'run',
     }
     await update($, log, list => [...list, line].slice(-100))
-    const ran = await next(e)
+    const isMainBash = String(e.tool) === 'Bash' && (e as { agentId?: string }).agentId === undefined
+    if (isMainBash) {
+      petSim.toolSince = await $.clock.now()
+      petSim.toolName = (line.detail.split(/\s+/)[0] ?? 'it').slice(0, 12)
+    }
+    const ran = await next(e).finally(() => {
+      if (isMainBash) petSim.toolSince = null
+    })
     const ok = ran.deny === undefined && ran.isError !== true
     const done: LogLine['state'] = ok ? 'ok' : 'err'
     await update($, log, list => list.map(l => (l.id === line.id ? { ...l, state: done } : l)))
@@ -2658,11 +2894,20 @@ export const register: Register = (on, options) => {
       spawnCoin()
     }
 
+    if (isMainBash) {
+      const out = ran.text ?? ''
+      if (CONFLICT_RE.test(out)) petSim.isConflict = true
+      else if (ok && SETTLE_RE.test(line.detail)) petSim.isConflict = false
+      if (ok && PUSH_RE.test(line.detail) && !/\[rejected\]|error:|fatal:/.test(out)) {
+        petReact('^', 'warn', 4000, await $.clock.now(), false, { text: 'RIDES A ROCKET: PUSHED!', kind: 'rocket' })
+      }
+    }
     if (String(e.tool) === 'Bash' && TEST_CMD_RE.test(line.detail)) {
       const res = parseTests(line.detail, ran.text ?? '')
       if (res) {
         await update($, tests, () => res)
-        petReact(res.failed ? '!' : '♥', 'fail', 3500, await $.clock.now(), res.failed === 0)
+        if (res.failed) petReact('!', 'fail', 3500, await $.clock.now(), false, { text: `WINCES: ${res.failed} FAILING` })
+        else petReact('♪', 'pass', 4000, await $.clock.now(), true, { text: 'DANCES: ALL GREEN!', kind: 'dance' })
         if (res.failed) {
           for (let i = 0; i < Math.min(3, res.failed); i++) spawnBug()
         } else {
@@ -2693,6 +2938,8 @@ export const register: Register = (on, options) => {
     const isTerminal = e.surface === 'terminal'
     const wantsPet = (await read($, petShown)) && e.props.maxRows >= PET_MIN_ROWS
     const withStrip = wantsPet && isTerminal
+    // the runner game during a long turn (E6-S01): terminal and desktop draw Clients
+    const isPlaying = wantsPet && e.props.isWorking && (await read($, runnerOn)) && (isTerminal || e.surface === 'desktop')
     const [t, en, tok, res, model, cursor, entries, themeName, s, err, u, now, pet, art, fontName] = await Promise.all([
       read($, ticket),
       read($, env),
@@ -2716,7 +2963,19 @@ export const register: Register = (on, options) => {
     const wx = await read($, weather)
     const C = paletteOf(themeName)
     let strip: RenderChildren = null
-    if (withStrip && e.surface === 'terminal') {
+    if (isPlaying && (e.surface === 'terminal' || e.surface === 'desktop')) {
+      const { Client } = $.ui.resolve(e)
+      const columns = Math.max(24, Math.min(160, W - 2))
+      const colors: Record<string, string> = { E: css(ANGRY_EYE) }
+      for (const [k, v] of Object.entries(PETS[pet.kind].colors)) colors[k] = css(v)
+      const props: RunnerProps = {
+        frames: [babySprite(pet.kind, 'walkA'), babySprite(pet.kind, 'walkB')], colors,
+        bg: C.bg, fg: C.fg, dim: C.dim, warn: C.warn, bug: css(BUG), best: game.best, columns,
+      }
+      if (isTerminal) petSim.isMounted = false
+      else petSim.remote.band = false
+      strip = <Client key="runner" module="./runner.tsx" props={props} width={columns} height={PET_ROWS + 1} />
+    } else if (withStrip && e.surface === 'terminal') {
       const { Raster } = $.ui.resolve(e)
       const columns = Math.max(SPRITE_W + 2, Math.min(512, W - 2))
       if (petSim.columns !== columns || !petSim.lastCells) {
@@ -2809,7 +3068,7 @@ export const register: Register = (on, options) => {
       ) : null,
     }
     // Row budget: the pet and READY. first (a short terminal, macOS's 80×24, leaves ~8 rows).
-    const room = e.props.maxRows - 1 - (strip ? PET_ROWS : e.props.isWorking ? 0 : 1)
+    const room = e.props.maxRows - 1 - (strip ? PET_ROWS + (isPlaying ? 1 : 0) : e.props.isWorking ? 0 : 1)
     const present = CFG.bandRows.filter(r => rows[r] !== null && rows[r] !== undefined && rows[r] !== false)
     const kept = keepRows(present, room)
     // big pixel letters take 3 rows: only when there is room for them, else the plain banner (E5-S04)

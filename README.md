@@ -59,6 +59,14 @@ A 7×4-pixel pet walks the bottom of the band. It always gets its three rows fir
 
 **Helpers for subagents.** Every subagent Claude starts hatches a *helper*: a baby version of your pet with its number above it (#1, #2…). While the subagent works, the helper bustles around and earns +1 XP for each of its tool calls that works (a ◆ flashes). When the subagent finishes, the helper runs back to the main pet and hands its score over, +5 for a finished job: `▶ HELPER #1 IS HOME (Find the auth code) · +8 XP`. Up to four are drawn at once; `/pet stats` lists them all.
 
+**Play while Claude works.** Once a turn has run 8 seconds, the pet's strip becomes a runner game: click it, then press space (or ↑, or click) to jump the bugs. Each bug cleared scores; a run's score is XP, up to 20 a turn. Esc gives the keys back to the prompt. In the terminal and the desktop app.
+
+**It grows up.** A baby until LV10, then an adult; at LV25 it twinkles as a legend, and at LV50 it grows wings.
+
+**The coin shop.** Coins you collect are spendable (everything collected before 1.4 counts): `/pet shop`, `/pet buy hat`, `/pet wear crown`, `/pet wear none`. A bow ◆15, a scarf ◆25, sunglasses ◆40, a top hat ◆60, a Tết lantern ◆88 and a crown ◆200, one per slot.
+
+**It reacts to your work.** It dances when tests go green and winces when they fail, rides a rocket when a `git push` lands, puzzles over a merge conflict until it's resolved, and naps beside a command that runs over a minute.
+
 `/pet name` asks you for a name (or use `/pet name Mochi` directly), `/pet ball` throws a ball, `/pet pat` pats it, `/pet stats` shows progress, and `/pet` on its own hides or shows the pet.
 
 ### Rows you choose

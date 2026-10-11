@@ -359,32 +359,32 @@ So that the banner looks the way I like.
 
 </details>
 
-## P4 · Play, share and seasons - ⬜ To do
+## P4 · Play, share and seasons - 🟡 In progress
 
-### E6 · Play - ⬜ To do
+### E6 · Play - ✅ Done
 
 **Outcome.** Waiting for Claude becomes the fun part, and coins buy something worth having.
 
-<details><summary><b>E6-S01</b> - as a <b>player</b>, I want <b>a tiny game to play while Claude is thinking</b> · ⬜ To do · 8 pts</summary>
+<details><summary><b>E6-S01</b> - as a <b>player</b>, I want <b>a tiny game to play while Claude is thinking</b> · ✅ Done · 8 pts</summary>
 
 So that a long turn is something to look forward to, not stare at.
 
 **Acceptance criteria**
 - During a long turn the band offers a runner game: the pet jumps over bugs, with the arrow keys or space
-- It runs in the terminal and the desktop app; where it can't (VS Code), the band says so instead
+- It runs in the terminal and the desktop app (VS Code draws no band; its pet pane keeps the pet)
 - Each bug cleared scores; a run's best score adds XP, at most 20 XP per turn so it can't be farmed
-- The game never takes the keys from the prompt unless the person starts it, and Esc hands them back
-- When the turn ends the game pauses and the score is kept
+- The game never takes the keys from the prompt unless the person clicks it, and Esc hands them back
+- When the turn ends the game closes, and the run in progress counts as it stands
 
 | Task | Kind | Status |
 |---|---|---|
-| Runner game as a Client module with its own frame clock | technical | ⬜ To do |
-| Score to XP with a per-turn cap | technical | ⬜ To do |
-| Keys, pause on turn end, XP cap asserted | testing | ⬜ To do |
+| Runner game as a Client module with its own frame clock | technical | ✅ Done |
+| Score to XP with a per-turn cap | technical | ✅ Done |
+| Click to start, frames, jumps, the XP cap and turn end asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E6-S02</b> - as a <b>player</b>, I want <b>to spend my coins on things for my pet to wear</b> · ⬜ To do · 5 pts</summary>
+<details><summary><b>E6-S02</b> - as a <b>player</b>, I want <b>to spend my coins on things for my pet to wear</b> · ✅ Done · 5 pts</summary>
 
 So that collecting ◆ means something.
 
@@ -396,13 +396,13 @@ So that collecting ◆ means something.
 
 | Task | Kind | Status |
 |---|---|---|
-| Coin balance, shop catalogue and saves | technical | ⬜ To do |
-| Item overlays per animal in cells and SVG | technical | ⬜ To do |
-| Buying, too few coins, wearing and saving asserted | testing | ⬜ To do |
+| Coin balance, shop catalogue and saves | technical | ✅ Done |
+| Item overlays per animal in cells and SVG | technical | ✅ Done |
+| Buying, too few coins, wearing and saving asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E6-S03</b> - as a <b>player</b>, I want <b>my pet to grow up as it levels</b> · ⬜ To do · 5 pts</summary>
+<details><summary><b>E6-S03</b> - as a <b>player</b>, I want <b>my pet to grow up as it levels</b> · ✅ Done · 5 pts</summary>
 
 So that a long-kept pet looks like one.
 
@@ -413,12 +413,12 @@ So that a long-kept pet looks like one.
 
 | Task | Kind | Status |
 |---|---|---|
-| Stage art for the roster | technical | ⬜ To do |
-| Stages per level and the switch rule asserted | testing | ⬜ To do |
+| Stage art for the roster | technical | ✅ Done |
+| Stages per level and the switch rule asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E6-S04</b> - as a <b>developer</b>, I want <b>my pet to react to what happens in my work</b> · ⬜ To do · 3 pts</summary>
+<details><summary><b>E6-S04</b> - as a <b>developer</b>, I want <b>my pet to react to what happens in my work</b> · ✅ Done · 3 pts</summary>
 
 So that the pet feels part of the session.
 
@@ -431,8 +431,8 @@ So that the pet feels part of the session.
 
 | Task | Kind | Status |
 |---|---|---|
-| Reactions from tool results | technical | ⬜ To do |
-| Each trigger asserted | testing | ⬜ To do |
+| Reactions from tool results | technical | ✅ Done |
+| Each trigger asserted | testing | ✅ Done |
 
 </details>
 

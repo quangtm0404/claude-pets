@@ -89,6 +89,8 @@ declare module 'claude-code' {
       font: FontName
       /** The pet's latest frame as SVG markup, for surfaces without a pixel grid. */
       petArt: string
+      /** The runner game is offered in the band while a long turn runs. */
+      runnerOn: boolean
       storyId: string | null
       story: Story | null
       /** The tracked id the plan doesn't have (shown as a hint, not an error). */

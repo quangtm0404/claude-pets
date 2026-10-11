@@ -1,5 +1,7 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { petPixels, stageOf } from './register'
+import { press, step } from './runner'
 
 const run = (command: string, args: string) => ({
   command,
@@ -849,4 +851,132 @@ test('1.3.1: weather lives under /pet, and /pet help lists every command', async
   expect(ran.text).toContain('Weather for Hanoi, Vietnam')
   const help = await $.command.run(run('pet', 'help'))
   for (const c of ['/pet weather here', '/pet board world', '/retro theme #FF8800', '/retro font', '/story <ID>', '/pet pane']) expect(help.text).toContain(c)
+})
+
+// ── E6: play ────────────────────────────────────────────────────────────────
+test('E6-S01: a long turn offers the runner; its runs score XP, at most 20 a turn', async ($, on) => {
+  const store: Record<string, unknown> = {}
+  const clock = mock.clock(on, { now: Date.parse('2026-10-09T09:00:00Z') })
+  on('session.root', () => ({ value: '/repo' }))
+  on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
+  on('fs.exists', () => ({ value: false }))
+  on('store.get', (_$, e) => ({ value: store[(e as { key: string }).key] }) as never)
+  on('store.set', (_$, e) => ((store[(e as { key: string }).key] = (e as { value: unknown }).value), { value: undefined }) as never)
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }) as never)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  const working = { ...tallBand('terminal'), props: { ...tallBand('terminal').props, isWorking: true } }
+
+  await $.turn.start({ text: 'build it', turnId: 't-1' } as never)
+  const early = await $.ui.mount(working as never)
+  expect(await early.find({ type: 'Client' })).toBeUndefined()
+  await early.unmount()
+
+  await clock.advance(8000)
+  // a band drawn on the terminal: its Client is driven by pointer, frame clock and posts
+  type Play = { pointer: (e: unknown) => Promise<void>; advance: (ms: number) => Promise<void>; post: (d: unknown, s?: unknown) => Promise<void> }
+  const ui = (await $.ui.mount(working as never)) as unknown as Awaited<ReturnType<typeof $.ui.mount>> & Play
+  expect(await ui.find({ type: 'Client' })).toBeDefined()
+  expect(await ui.find({ text: /CLICK HERE, THEN SPACE/, in: 'runner' })).toBeDefined()
+  await ui.pointer({ type: 'down', x: 3, y: 1, button: 'left', in: 'runner' })
+  await ui.advance(120)
+  expect(await ui.find({ text: /SCORE 0 · BEST 0/, in: 'runner' })).toBeDefined()
+
+  await ui.post({ type: 'over', score: 35 }, { in: 'runner' })
+  await ui.post({ type: 'over', score: 12 }, { in: 'runner' })
+  await ui.unmount()
+  expect(store.runnerBest).toBe(35)
+  await $.turn.complete({ answer: 'ok', durationMs: 9000, isAborted: false, turnId: 't-1', reason: 'answer' } as never)
+  const stats = await $.command.run(run('pet', 'stats'))
+  expect(stats.text).toContain('XP 22') // 20 from the runner (capped), 2 for the turn
+
+  const after = await $.ui.mount(tallBand('terminal') as never)
+  expect(await after.find({ type: 'Client' })).toBeUndefined()
+  expect(await after.find({ type: 'Raster', key: 'pet' })).toBeDefined()
+  await after.unmount()
+})
+
+test('E6-S01: the runner jumps, scores the bugs it clears, and a bug underfoot ends the run', () => {
+  const g = { isStarted: true, isOver: false, t: 0, y: 0, vy: 0, bugs: [{ x: 11, isCounted: false }], nextBug: 999, score: 0, best: 0, seed: 1 }
+  const air = press(g, 0)
+  expect(air.vy).toBeGreaterThan(0)
+  const cleared = { ...air, bugs: air.bugs.map(b => ({ ...b })) }
+  for (let i = 0; i < 30 && !cleared.isOver; i++) step(cleared, 60)
+  expect(cleared.isOver).toBe(false)
+  expect(cleared.score).toBe(1)
+  const hit = { ...g, bugs: [{ x: 9, isCounted: false }] }
+  for (let i = 0; i < 20 && !hit.isOver; i++) step(hit, 60)
+  expect(hit.isOver).toBe(true)
+  const again = press(hit, 0)
+  expect(again.isOver).toBe(false)
+  expect(again.score).toBe(0)
+})
+
+test('E6-S02: coins buy items; one per slot; wearing toggles; a short purse is refused', async ($, on) => {
+  const store = repo(on, {})
+  store.profile = { since: '2026-10-01', totals: { xp: 0, coins: 100, bugs: 0, helpers: 0, green: 0, turns: 0, balls: 0 }, byKind: {}, streak: { days: 1, best: 1, last: '2026-10-09' }, badges: [] }
+  const shop = await $.command.run(run('pet', 'shop'))
+  expect(shop.text).toContain('you have ◆100')
+  expect(shop.text).toMatch(/crown\s+Crown\s+◆200/)
+  expect((await $.command.run(run('pet', 'buy crown'))).text).toContain('costs ◆200; you have ◆100')
+  expect((await $.command.run(run('pet', 'buy hat'))).text).toBe('Bought the top hat for ◆60, and put it on. ◆40 left.')
+  expect((await $.command.run(run('pet', 'buy bow'))).text).toContain('◆25 left')
+  // the same slot: the bow replaced the hat
+  expect(store.wallet).toEqual({ coins: 25, owned: ['hat', 'bow'], wearing: ['bow'] })
+  expect((await $.command.run(run('pet', 'wear hat'))).text).toBe('Wearing the top hat.')
+  expect((await $.command.run(run('pet', 'wear hat'))).text).toBe('Took off the top hat.')
+  expect((await $.command.run(run('pet', 'wear lantern'))).text).toContain("You don't have the tết lantern yet")
+  expect((await $.command.run(run('pet', 'wear none'))).text).toBe('Took everything off.')
+})
+
+const FRAME = {
+  kind: 'cat' as const, columns: 30, x: 10, dir: -1 as const, pose: 'sit' as const, mood: 'happy' as const, lift: 0,
+  bubble: null, ballX: null, coins: [], bugs: [], sparkle: false, bg: '#000000', ground: '#333333', cursor: null, hud: [],
+}
+const lit = (px: (number | null)[], c?: number) => px.filter(p => (c === undefined ? p !== null : p === c)).length
+
+test('E6-S02/S03: items are drawn on the pet either way it faces; babies are smaller; legends twinkle', () => {
+  const plain = petPixels({ ...FRAME, tick: 0 }).px
+  expect(lit(plain, 0x2b2b2b)).toBe(0)
+  expect(lit(petPixels({ ...FRAME, tick: 0, items: ['hat'] }).px, 0x2b2b2b)).toBeGreaterThan(0)
+  for (const dir of [-1, 1] as const) expect(lit(petPixels({ ...FRAME, dir, items: ['scarf'] }).px, 0xe53935)).toBe(2)
+  expect(lit(petPixels({ ...FRAME, stage: 'baby' }).px)).toBeLessThan(lit(plain))
+  expect(lit(petPixels({ ...FRAME, stage: 'legend', tick: 0 }).px, 0xfff6a0)).toBe(1)
+  expect([1, 9, 10, 24, 25, 49, 50, 80].map(stageOf)).toEqual(['baby', 'baby', 'adult', 'adult', 'legend', 'legend', 'mythic', 'mythic'])
+})
+
+test('E6-S03: reaching LV10 grows the pet up, and /pet stats shows the stage', async ($, on) => {
+  const toasts: string[] = []
+  const store = repo(on, {}, {}, toasts)
+  store.petXp = 1214 // LV9; LV10 is at 1215
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  expect((await $.command.run(run('pet', 'stats'))).text).toContain('Stage: BABY (ADULT at LV10)')
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't-1', reason: 'answer' } as never)
+  expect(toasts.some(t => t.includes('GREW UP: ADULT'))).toBe(true)
+  expect((await $.command.run(run('pet', 'stats'))).text).toContain('Stage: ADULT (LEGEND at LV25)')
+})
+
+test('E6-S04: the pet dances on green, winces on red, rides a rocket on a push, and puzzles over a conflict', async ($, on) => {
+  repo(on, {})
+  const outputs: Record<string, string> = {
+    'npx playwright test': '  12 passed (3.1s)',
+    'npx playwright test --grep x': '  2 failed\n  8 passed (10s)',
+    'git push origin feature/x': 'To github.com:me/x.git\n   1a2b3c4..5d6e7f8  feature/x -> feature/x',
+    'git merge feature': 'CONFLICT (content): Merge conflict in a.ts\nAutomatic merge failed; fix conflicts and then commit the result.',
+    'git commit -am fix': '[main 9f9f9f9] fix',
+  }
+  on('tool.call', (_$, e) => ({ result: {}, text: outputs[(e as { command: string }).command] ?? '' }) as never)
+  const now = async (command: string) => {
+    await $.tool.call({ tool: 'Bash', command } as never)
+    return /^Now: (.*)$/m.exec((await $.command.run(run('pet', 'stats'))).text ?? '')?.[1]
+  }
+  expect(await now('npx playwright test')).toBe('DANCES: ALL GREEN!')
+  expect(await now('npx playwright test --grep x')).toBe('WINCES: 2 FAILING')
+  expect(await now('git push origin feature/x')).toBe('RIDES A ROCKET: PUSHED!')
+  const merged = await now('git merge feature')
+  expect(merged).toContain('PUZZLED BY A MERGE CONFLICT')
+  const committed = await now('git commit -am fix')
+  expect(committed ?? '').not.toContain('MERGE CONFLICT')
 })

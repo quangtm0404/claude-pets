@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0 — 2026-10-11
+
+Play ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E6).
+
+- **A runner game while Claude works** (E6-S01): after 8 seconds of a turn, the pet's strip becomes a game. Click it, then space, ↑ or a click jumps the bugs. A run's score is XP, at most 20 a turn; your best is kept. Terminal and desktop app.
+- **The coin shop** (E6-S02): `/pet shop`, `/pet buy <item>`, `/pet wear <item>|none`. A bow, a scarf, sunglasses, a top hat, a Tết lantern and a crown, drawn on every animal. Every coin you've collected so far is spendable.
+- **Growing up** (E6-S03): baby until LV10, adult, a twinkling legend at LV25, wings at LV50. `/pet stats` shows the stage.
+- **Reactions to your work** (E6-S04): it dances on green tests, winces on red, rides a rocket on a `git push`, puzzles over merge conflicts, and naps beside long commands. `/pet stats` shows what it's reacting to.
+
 ## 1.3.1 — 2026-10-11
 
 - **Weather is part of `/pet`**: `/pet weather`, `/pet weather <city>`, `/pet weather here` and `/pet weather off`. The separate `/weather` command is gone.
