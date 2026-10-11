@@ -1347,11 +1347,21 @@ async function nowLine($: EngineInterface): Promise<string[]> {
 }
 
 // ── The runner game (E6-S01) ─────────────────────────────────────────────────
-// Offered in the band once a turn has run a few seconds; the game itself runs in
-// runner.tsx, on the surface. Its best run scores XP, at most RUNNER_XP_CAP a turn.
+// Off unless asked for: `/pet play` opens it in the band until `/pet play off`, and
+// `/pet play auto` offers it by itself once a turn has run a few seconds. The game
+// runs in runner.tsx, on the surface. Its runs score XP, at most RUNNER_XP_CAP a turn.
 const RUNNER_AFTER_MS = 8000
 export const RUNNER_XP_CAP = 20
-const game = { live: 0, credited: 0, best: 0, timer: null as null | { cancel: () => void } }
+const game = { live: 0, credited: 0, best: 0, isManual: false, timer: null as null | { cancel: () => void } }
+
+/** Closes the runner; a run still going counts as it stands. */
+async function closeRunner($: EngineInterface) {
+  game.timer?.cancel()
+  game.isManual = false
+  await update($, runnerOn, () => false)
+  if (game.live > 0) await creditRun($, game.live)
+  game.live = 0
+}
 
 async function creditRun($: EngineInterface, score: number) {
   if (score > game.best) {
@@ -2328,7 +2338,8 @@ export const PET_HELP = [
   '  /pet stats                 level, stage, XP, mood, coins, helpers',
   '  /pet shop                  spend coins: bow, scarf, shades, hat, lantern, crown',
   '  /pet buy <item> · /pet wear <item>|none   buy it; put it on or take it off',
-  '  (while Claude works)       click the runner in the band, then space to jump the bugs',
+  '  /pet play [off]            open (or close) the runner game in the band; click it, then space to jump',
+  '  /pet play auto [off]       open it by itself while Claude works (off by default)',
   '  /pet pane                  the pet in a pane of its own (VS Code opens it by itself)',
   '',
   'WEATHER',
@@ -2616,6 +2627,20 @@ export const register: Register = (on, options) => {
       await loadXp($)
       const copied = await $.ui.copy({ text: diarySvg(text, pet, levelOf(petSim.xp), petSim.wearing, paletteOf(themeName)) })
       return { text: copied.isCopied ? 'Copied the diary card as SVG: paste it into a file named diary.svg to share it.' : 'Could not copy the card here.' }
+    } else if (/^(play|game)(\s+(on|off|stop|auto|auto\s+off))?$/i.test(args)) {
+      const opt = args.replace(/^(play|game)\s*/i, '').toLowerCase().replace(/\s+/g, ' ')
+      if (opt === 'auto' || opt === 'auto off') {
+        await $.store.set('runnerAuto', opt === 'auto')
+        return { text: opt === 'auto' ? 'The runner will open by itself once Claude has worked 8 s. /pet play auto off stops that.' : 'The runner opens only when you ask: /pet play.' }
+      }
+      if (opt === 'off' || opt === 'stop') {
+        await closeRunner($)
+        return { text: 'Runner closed.' }
+      }
+      game.timer?.cancel()
+      game.isManual = true
+      await update($, runnerOn, () => true)
+      return { text: 'The runner is in the band: click it, then space to jump the bugs. /pet play off closes it.' }
     } else if (/^shop$/i.test(args)) {
       return { text: shopText(await readWallet($)) }
     } else if (/^(buy|wear)\s+\S/i.test(args)) {
@@ -2785,12 +2810,14 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     isWorking = true
     petSim.isWorking = true
-    game.live = 0
     game.credited = 0
     game.timer?.cancel()
-    game.timer = $.clock.after(RUNNER_AFTER_MS, () => {
-      if (isWorking) void update($, runnerOn, () => true)
-    })
+    if (!game.isManual && (await $.store.get('runnerAuto')) === true) {
+      game.live = 0
+      game.timer = $.clock.after(RUNNER_AFTER_MS, () => {
+        if (isWorking) void update($, runnerOn, () => true)
+      })
+    }
     return next(e)
   })
 
@@ -2813,11 +2840,9 @@ export const register: Register = (on, options) => {
       isWorking = false
       petSim.isWorking = false
       petSim.lastActive = await $.clock.now()
-      game.timer?.cancel()
-      await update($, runnerOn, () => false)
-      // a run still going when the turn ends counts as it stands
-      if (game.live > 0) await creditRun($, game.live)
-      game.live = 0
+      // a game the turn offered closes with it; one you opened stays until /pet play off
+      if (game.isManual) game.timer?.cancel()
+      else await closeRunner($)
       const u = e.usage
       if (u) await update($, tokens, n => n + u.input_tokens + u.output_tokens + u.cache_creation_input_tokens)
       await update($, turns, n => n + 1)
@@ -2922,7 +2947,7 @@ export const register: Register = (on, options) => {
     const wantsPet = (await read($, petShown)) && e.props.maxRows >= PET_MIN_ROWS
     const withStrip = wantsPet && isTerminal
     // the runner game during a long turn (E6-S01): terminal and desktop draw Clients
-    const isPlaying = wantsPet && e.props.isWorking && (await read($, runnerOn)) && (isTerminal || e.surface === 'desktop')
+    const isPlaying = wantsPet && (e.props.isWorking || game.isManual) && (await read($, runnerOn)) && (isTerminal || e.surface === 'desktop')
     const [t, en, tok, res, model, cursor, entries, themeName, s, err, u, now, pet, art, fontName] = await Promise.all([
       read($, ticket),
       read($, env),

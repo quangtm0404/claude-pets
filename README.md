@@ -59,7 +59,7 @@ A 7×4-pixel pet walks the bottom of the band. It always gets its three rows fir
 
 **Helpers for subagents.** Every subagent Claude starts hatches a *helper*: a baby version of your pet with its number above it (#1, #2…). While the subagent works, the helper bustles around and earns +1 XP for each of its tool calls that works (a ◆ flashes). When the subagent finishes, the helper runs back to the main pet and hands its score over, +5 for a finished job: `▶ HELPER #1 IS HOME (Find the auth code) · +8 XP`. Up to four are drawn at once; `/pet stats` lists them all.
 
-**Play while Claude works.** Once a turn has run 8 seconds, the pet's strip becomes a runner game: click it, then press space (or ↑, or click) to jump the bugs. Each bug cleared scores; a run's score is XP, up to 20 a turn. Esc gives the keys back to the prompt. In the terminal and the desktop app.
+**A runner game, when you want it.** It's off by default. `/pet play` turns the pet's strip into a runner game until `/pet play off`; `/pet play auto` opens it by itself once Claude has worked 8 seconds. Click it, then press space (or ↑, or click) to jump the bugs. Each bug cleared scores; a run's score is XP, up to 20 a turn. Esc gives the keys back to the prompt. In the terminal and the desktop app.
 
 **It grows up.** A baby until LV10, then an adult; at LV25 it twinkles as a legend, and at LV50 it grows wings.
 

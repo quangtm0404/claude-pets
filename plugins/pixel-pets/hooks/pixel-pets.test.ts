@@ -854,8 +854,8 @@ test('1.3.1: weather lives under /pet, and /pet help lists every command', async
 })
 
 // ── E6: play ────────────────────────────────────────────────────────────────
-test('E6-S01: a long turn offers the runner; its runs score XP, at most 20 a turn', async ($, on) => {
-  const store: Record<string, unknown> = {}
+test('E6-S01: with /pet play auto, a long turn offers the runner; its runs score XP, at most 20 a turn', async ($, on) => {
+  const store: Record<string, unknown> = { runnerAuto: true }
   const clock = mock.clock(on, { now: Date.parse('2026-10-09T09:00:00Z') })
   on('session.root', () => ({ value: '/repo' }))
   on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
@@ -896,6 +896,47 @@ test('E6-S01: a long turn offers the runner; its runs score XP, at most 20 a tur
   expect(await after.find({ type: 'Client' })).toBeUndefined()
   expect(await after.find({ type: 'Raster', key: 'pet' })).toBeDefined()
   await after.unmount()
+})
+
+test('E6-S01: the runner is off by default; /pet play opens it any time and /pet play off closes it', async ($, on) => {
+  const store: Record<string, unknown> = {}
+  const clock = mock.clock(on, { now: Date.parse('2026-10-09T09:00:00Z') })
+  on('session.root', () => ({ value: '/repo' }))
+  on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
+  on('fs.exists', () => ({ value: false }))
+  on('store.get', (_$, e) => ({ value: store[(e as { key: string }).key] }) as never)
+  on('store.set', (_$, e) => ((store[(e as { key: string }).key] = (e as { value: unknown }).value), { value: undefined }) as never)
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }) as never)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  const working = { ...tallBand('terminal'), props: { ...tallBand('terminal').props, isWorking: true } }
+
+  await $.turn.start({ text: 'build it', turnId: 't-1' } as never)
+  await clock.advance(30000)
+  const busy = await $.ui.mount(working as never)
+  expect(await busy.find({ type: 'Client' })).toBeUndefined()
+  await busy.unmount()
+  await $.turn.complete({ answer: 'ok', durationMs: 30000, isAborted: false, turnId: 't-1', reason: 'answer' } as never)
+
+  expect((await $.command.run(run('pet', 'play'))).text).toContain('/pet play off closes it')
+  const idle = await $.ui.mount(tallBand('terminal') as never)
+  expect(await idle.find({ type: 'Client' })).toBeDefined()
+  await idle.unmount()
+  // a game you opened outlasts a turn
+  await $.turn.start({ text: 'more', turnId: 't-2' } as never)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't-2', reason: 'answer' } as never)
+  const still = await $.ui.mount(tallBand('terminal') as never)
+  expect(await still.find({ type: 'Client' })).toBeDefined()
+  await still.unmount()
+
+  expect((await $.command.run(run('pet', 'play off'))).text).toBe('Runner closed.')
+  const closed = await $.ui.mount(tallBand('terminal') as never)
+  expect(await closed.find({ type: 'Client' })).toBeUndefined()
+  await closed.unmount()
+  expect((await $.command.run(run('pet', 'play auto'))).text).toContain('by itself')
+  expect(store.runnerAuto).toBe(true)
 })
 
 test('E6-S01: the runner jumps, scores the bugs it clears, and a bug underfoot ends the run', () => {

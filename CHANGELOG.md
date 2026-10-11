@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1 — 2026-10-11
+
+- **The runner game is now optional** and off by default. `/pet play` opens it in the band (even between turns) until `/pet play off`; `/pet play auto` brings back the old behaviour of opening it by itself 8 seconds into a turn.
+
 ## 1.5.0 — 2026-10-11
 
 Share ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E7). The board service is updated and live.
