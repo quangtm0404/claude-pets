@@ -271,7 +271,7 @@ async function geocode($: EngineInterface, query: string): Promise<WeatherPlace 
   return hit ? { name: [hit.name, hit.country].filter(Boolean).join(', '), lat: hit.latitude, lon: hit.longitude } : null
 }
 
-/** Where this machine is, by its IP address: only when the person asks (/weather here). */
+/** Where this machine is, by its IP address: only when the person asks (/pet weather here). */
 async function placeFromIp($: EngineInterface): Promise<WeatherPlace | null> {
   const r = await $.http.fetch('https://ipapi.co/json/')
   if (!r.ok) return null
@@ -2179,15 +2179,51 @@ const COMMANDS: { name: string; description: string }[] = [
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
-    description: 'An 8-bit pet game in the band: /pet (show/hide) · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
+    description: 'Claude Pets: /pet help lists everything · /pet (show/hide) · /pet weather <city>|here|off · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
   },
   // not `standup`: other plugins commonly own that name
   { name: 'standup64', description: 'Three-line standup (Done / Next / Blockers) from this session, copied to the clipboard' },
   { name: 'defect', description: 'Draft a bug report for the last failed test run into the prompt' },
-  { name: 'weather', description: 'Local weather in the band: /weather <city> · /weather here (IP lookup) · /weather off · /weather' },
   { name: 'guard', description: 'Claude Pets guardrails: /guard (status) · /guard off · /guard on' },
   { name: 'retro', description: 'Toggle the Claude Pets band · /retro theme <preset>|#accent [on #background] · /retro font plain|bold|mono|double|wide|pixel · /retro sound on|off' },
 ]
+
+/** `/pet help`: every command, grouped. */
+export const PET_HELP = [
+  'CLAUDE PETS · COMMANDS',
+  '',
+  'PET',
+  '  /pet                      show or hide the pet',
+  '  /pet list · /pet <animal>  the 14 animals; switch (XP and name stay)',
+  '  /pet name [Mochi]          rename it (no name: pick from ideas)',
+  '  /pet ball · /pet pat       play with it',
+  '  /pet stats                 level, XP, mood, coins, helpers',
+  '  /pet pane                  the pet in a pane of its own (VS Code opens it by itself)',
+  '',
+  'WEATHER',
+  '  /pet weather               the current conditions',
+  '  /pet weather <city>        set your place (Open-Meteo)',
+  '  /pet weather here          look your place up from your IP address',
+  '  /pet weather off           forget the place; nothing is fetched',
+  '',
+  'BOARDS',
+  '  /pet board                 your profile, streak and achievements',
+  '  /pet board world           the world board',
+  '  /pet join · /pet leave     join it with GitHub, or delete your entry',
+  '',
+  'LOOK',
+  '  /retro                     show or hide the band',
+  '  /retro theme <preset>      ice, phosphor, amber, c64, mint, rose, mono, paper',
+  '  /retro theme #FF8800 [on #101010]   your own colours',
+  '  /retro font <style>        plain, bold, mono, double, wide, pixel',
+  '  /retro sound on|off        the pet\'s voice',
+  '',
+  'WORK',
+  '  /story <ID> · /story plan  track a backlog story; pick this repo\'s plan file',
+  '  /ticket KEY-123 DEV        an issue key and environment in the band',
+  '  /standup64 · /defect       a standup from this session; a bug draft from the last failed run',
+  '  /guard on|off · /qa-pane   guardrails; the QA monitor pane',
+].join('\n')
 
 const THEME_HELP = [
   `Presets: ${THEME_NAMES.join(' · ')}`,
@@ -2209,6 +2245,35 @@ async function registerCommands($: EngineInterface) {
     }
   }
   if (clashes.length) $.ui.log(`pixel-pets: ${clashes.join(', ')} not registered: another plugin owns the name`)
+}
+
+/** `/pet weather …`: show, set (a city, or here by IP address) or forget the place (E2). */
+async function weatherCommand($: EngineInterface, args: string): Promise<{ text: string }> {
+  if (/^(off|clear|none)$/i.test(args)) {
+    await $.store.set('weatherPlace', null)
+    await refreshWeather($)
+    return { text: 'Weather off: no place is stored, and nothing is fetched.' }
+  }
+  if (!args) {
+    const wx = await read($, weather)
+    const place = await readPlace($)
+    if (!place) return { text: 'No place set. /pet weather <city> sets one; /pet weather here looks yours up from your IP address.' }
+    return {
+      text: wx
+        ? `${wx.place}: ${fmtTemp(wx.tempC, CFG.temperatureUnit)}, ${wx.label.toLowerCase()}, wind ${fmtWind(wx.windKmh, CFG.temperatureUnit).toLowerCase()} (Open-Meteo, every 15 minutes).`
+        : `${place.name}: no reading yet.`,
+    }
+  }
+  const isHere = /^here$/i.test(args)
+  const place = isHere ? await placeFromIp($).catch(() => null) : await geocode($, args).catch(() => null)
+  if (!place) return { text: isHere ? 'Could not look up your place from your IP address. Try /pet weather <city>.' : `No place called "${args}" found.` }
+  await $.store.set('weatherPlace', place)
+  await refreshWeather($)
+  const wx = await read($, weather)
+  return {
+    text: `Weather for ${place.name}${isHere ? ' (from your IP address, via ipapi.co)' : ''}`
+      + (wx ? `: ${fmtTemp(wx.tempC, CFG.temperatureUnit)}, ${wx.label.toLowerCase()}.` : '.'),
+  }
 }
 
 /** Asks for a name: four ideas, or anything typed under Other (16 characters at most). */
@@ -2372,6 +2437,10 @@ export const register: Register = (on, options) => {
           'XP: +1 coin (a tool call that worked) · +5 bug squashed (an error) · +10 green test run · +2 per turn · +2 ball · helpers: +1 per subagent call that worked, +5 when its job is done',
         ].join('\n'),
       }
+    } else if (/^weather\b/i.test(args)) {
+      return weatherCommand($, args.replace(/^weather\s*/i, ''))
+    } else if (/^(help|\?|commands)$/i.test(args)) {
+      return { text: PET_HELP }
     } else if (/^(pane|window)$/i.test(args)) {
       const opened = await openPetPane($)
       return { text: opened.isPlaced ? 'The pet pane is open. READY.' : 'The pet pane is waiting for room.' }
@@ -2385,7 +2454,7 @@ export const register: Register = (on, options) => {
         text: shown ? `${pet.name} the ${pet.kind} joins the band. READY.` : `${pet.name} is resting. /pet brings them back.`,
       }
     } else {
-      return { text: 'Usage: /pet (show/hide) · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
+      return { text: 'Usage: /pet help · /pet (show/hide) · /pet weather · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
     }
     await update($, petShown, () => true)
     const pet = await readPet($)
@@ -2484,35 +2553,6 @@ export const register: Register = (on, options) => {
     if (!picked) return { text: 'Plan unchanged.' }
     if (!(await firstExisting($, [picked]))) return { text: `${picked} doesn't exist.` }
     return use(picked)
-  })
-
-  on('command.run', { command: 'weather' }, async ($, e) => {
-    const args = e.args.trim()
-    if (/^(off|clear|none)$/i.test(args)) {
-      await $.store.set('weatherPlace', null)
-      await refreshWeather($)
-      return { text: 'Weather off: no place is stored, and nothing is fetched.' }
-    }
-    if (!args) {
-      const wx = await read($, weather)
-      const place = await readPlace($)
-      if (!place) return { text: 'No place set. /weather <city> sets one; /weather here looks yours up from your IP address.' }
-      return {
-        text: wx
-          ? `${wx.place}: ${fmtTemp(wx.tempC, CFG.temperatureUnit)}, ${wx.label.toLowerCase()}, wind ${fmtWind(wx.windKmh, CFG.temperatureUnit).toLowerCase()} (Open-Meteo, every 15 minutes).`
-          : `${place.name}: no reading yet.`,
-      }
-    }
-    const isHere = /^here$/i.test(args)
-    const place = isHere ? await placeFromIp($).catch(() => null) : await geocode($, args).catch(() => null)
-    if (!place) return { text: isHere ? 'Could not look up your place from your IP address. Try /weather <city>.' : `No place called "${args}" found.` }
-    await $.store.set('weatherPlace', place)
-    await refreshWeather($)
-    const wx = await read($, weather)
-    return {
-      text: `Weather for ${place.name}${isHere ? ' (from your IP address, via ipapi.co)' : ''}`
-        + (wx ? `: ${fmtTemp(wx.tempC, CFG.temperatureUnit)}, ${wx.label.toLowerCase()}.` : '.'),
-    }
   })
 
   on('command.run', { command: 'ticket' }, async ($, e) => {

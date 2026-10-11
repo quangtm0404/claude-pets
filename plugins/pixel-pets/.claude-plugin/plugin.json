@@ -1,6 +1,6 @@
 {
   "name": "pixel-pets",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code (terminal, desktop app and VS Code), with plan usage, weather, your backlog story, themes you colour yourself, pet voices and guardrails",
   "author": {
     "name": "quangtm0404"
@@ -72,7 +72,7 @@
     "weatherPlace": {
       "type": "string",
       "title": "Weather place",
-      "description": "A city to show the weather for (looked up once); empty means no weather and no requests. /weather sets it too",
+      "description": "A city to show the weather for (looked up once); empty means no weather and no requests. /pet weather sets it too",
       "default": ""
     },
     "temperatureUnit": {

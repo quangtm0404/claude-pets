@@ -590,22 +590,22 @@ function weatherApi(on: On, current: unknown, next?: { current: unknown }) {
 test('E2-S01: no place set means no request at all', async ($, on) => {
   repo(on, {})
   const urls = weatherApi(on, NOW(0, 27.8))
-  const ran = await $.command.run(run('weather', ''))
+  const ran = await $.command.run(run('pet', 'weather ' + ''))
   expect(ran.text).toContain('No place set')
   expect(urls.length).toBe(0)
 })
 
-test('E2-S01/S02: /weather <city> finds it, shows °C and °F, and /weather off forgets it', async ($, on) => {
+test('E2-S01/S02: /pet weather <city> finds it, shows °C and °F, and /pet weather off forgets it', async ($, on) => {
   const store = repo(on, {})
   weatherApi(on, NOW(0, 27.8))
-  const ran = await $.command.run(run('weather', 'Hanoi'))
+  const ran = await $.command.run(run('pet', 'weather ' + 'Hanoi'))
   expect(ran.text).toBe('Weather for Hanoi, Vietnam: 28°C / 82°F, clear.')
   expect(store.weatherPlace).toEqual({ name: 'Hanoi, Vietnam', lat: 21.0245, lon: 105.84117 })
   const ui = await $.ui.mount(tallBand('terminal') as never)
   expect(await ui.find({ text: ' ☀ 28°C / 82°F' })).toBeDefined()
   expect(await ui.find({ text: ' · HANOI, VIETNAM' })).toBeDefined()
   await ui.unmount()
-  const off = await $.command.run(run('weather', 'off'))
+  const off = await $.command.run(run('pet', 'weather ' + 'off'))
   expect(off.text).toContain('Weather off')
   const gone = await $.ui.mount(tallBand('terminal') as never)
   expect(await gone.find({ text: /°C/ })).toBeUndefined()
@@ -615,7 +615,7 @@ test('E2-S01/S02: /weather <city> finds it, shows °C and °F, and /weather off 
 test('E2-S02: temperatureUnit f shows °F and mph only', { options: { temperatureUnit: 'f' } } as never, async ($, on) => {
   repo(on, {})
   weatherApi(on, NOW(61, 10, 40))
-  await $.command.run(run('weather', 'Hanoi'))
+  await $.command.run(run('pet', 'weather ' + 'Hanoi'))
   const ui = await $.ui.mount(tallBand('terminal') as never)
   expect(await ui.find({ text: ' ☂ 50°F' })).toBeDefined()
   expect(await ui.find({ text: ' · WIND 25 MPH' })).toBeDefined()
@@ -629,7 +629,7 @@ test('E2-S03: every sky draws under the pet without error', async ($, on) => {
   weatherApi(on, null, sky)
   for (const [code, isDay] of [[0, 1], [0, 0], [3, 1], [45, 1], [61, 1], [73, 1], [95, 1]] as const) {
     sky.current = NOW(code, 12, 35, isDay)
-    await $.command.run(run('weather', 'Hanoi'))
+    await $.command.run(run('pet', 'weather ' + 'Hanoi'))
     const ui = await $.ui.mount(tallBand('terminal') as never)
     expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeDefined()
     await ui.unmount()
@@ -840,4 +840,13 @@ test('E5-S04: /retro font restyles the banner; pixel draws big letters where the
 
   const help = await $.command.run(run('retro', 'font comic'))
   expect(help.text).toContain("The terminal's own font is its setting")
+})
+
+test('1.3.1: weather lives under /pet, and /pet help lists every command', async ($, on) => {
+  repo(on, {})
+  weatherApi(on, NOW(0, 27.8))
+  const ran = await $.command.run(run('pet', 'weather Hanoi'))
+  expect(ran.text).toContain('Weather for Hanoi, Vietnam')
+  const help = await $.command.run(run('pet', 'help'))
+  for (const c of ['/pet weather here', '/pet board world', '/retro theme #FF8800', '/retro font', '/story <ID>', '/pet pane']) expect(help.text).toContain(c)
 })

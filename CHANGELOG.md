@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1 — 2026-10-11
+
+- **Weather is part of `/pet`**: `/pet weather`, `/pet weather <city>`, `/pet weather here` and `/pet weather off`. The separate `/weather` command is gone.
+- **`/pet help`** lists every Claude Pets command, grouped: pet, weather, boards, look and work.
+
 ## 1.3.0 — 2026-10-11
 
 Everywhere, in your colours ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E5).

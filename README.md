@@ -68,7 +68,7 @@ Not a developer? Pick the rows you want with the `bandRows` setting (in `/config
 ```
  ☀ 28°C / 82°F · CLEAR · WIND 5 KM/H · HANOI, VIETNAM
 ```
-`/weather Hanoi` sets your place (or put it in the `weatherPlace` setting), `/weather` shows the current conditions, and `/weather off` forgets the place. `/weather here` looks your place up from your IP address, but only when you ask. The `temperatureUnit` setting picks °C, °F or both, and the wind follows in km/h or mph. Conditions come from [Open-Meteo](https://open-meteo.com) every 15 minutes.
+`/pet weather Hanoi` sets your place (or put it in the `weatherPlace` setting), `/pet weather` shows the current conditions, and `/pet weather off` forgets the place. `/pet weather here` looks your place up from your IP address, but only when you ask. The `temperatureUnit` setting picks °C, °F or both, and the wind follows in km/h or mph. Conditions come from [Open-Meteo](https://open-meteo.com) every 15 minutes.
 
 The pet's strip shows the same sky: the sun by day, the moon and stars at night, drifting clouds, rain, snow, fog, and lightning in a storm. The pet shelters from the rain, plays in the snow, basks on a hot, clear day, and gets pushed along by strong wind.
 
@@ -188,7 +188,7 @@ In VS Code the pet pane opens by itself when the pet is shown; `/pet pane` opens
 Everything stays local: the backlog files, git and the transcript are read on your machine, and state (your pet, profile and place) is kept in Claude Code's own plugin storage. The exceptions, each only when you use it:
 
 - **Weather**: once you set a place, its name goes to Open-Meteo's geocoding once, and its coordinates go to Open-Meteo's forecast every 15 minutes. With no place set, nothing is sent.
-- **`/weather here`**: your IP address goes to ipapi.co to find your place, only when you run it.
+- **`/pet weather here`**: your IP address goes to ipapi.co to find your place, only when you run it.
 - **World board**: after `/pet join`, your GitHub login, level, XP, favourite pet and streak go to the board's service; `/pet leave` deletes them.
 - **`/standup64`**: the session's facts and its last few messages go to a Haiku model through your own Claude Code session.
 
