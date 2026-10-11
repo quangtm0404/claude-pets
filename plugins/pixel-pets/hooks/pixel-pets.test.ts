@@ -172,14 +172,6 @@ test('the pet walks in a strip at the bottom of the band, not in a pane', async 
   await desk.unmount()
 })
 
-test('a short band leaves the pet out', async ($, on) => {
-  engine(on, '')
-  const short = band(100)
-  const ui = await $.ui.mount({ plugin: 'pixel-pets', surface: 'terminal', ...short, props: { ...short.props, maxRows: 8 } } as never)
-  expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeUndefined()
-  await ui.unmount()
-})
-
 test('/pet hides and shows it; /pet crab and /pet name change it', async ($, on) => {
   engine(on, '')
   const hidden = await $.command.run(run('pet', ''))
@@ -492,9 +484,9 @@ test('no plan is not an error: the band says how to set one', async ($, on) => {
   repo(on, {})
   const ran = await $.command.run(run('story', 'E12-S03'))
   expect(ran.text).toContain('No plan found for this project')
-  expect(ran.text).toContain('/plan')
+  expect(ran.text).toContain('/story plan')
   const ui = await $.ui.mount(tallBand('terminal') as never)
-  expect(await ui.find({ text: /NO PLAN YET · \/plan TO POINT AT YOURS/ })).toBeDefined()
+  expect(await ui.find({ text: /NO PLAN YET · \/story plan TO POINT AT YOURS/ })).toBeDefined()
   expect(await ui.find({ text: /ERROR/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -511,20 +503,20 @@ test('an id mentioned in a prompt is only tracked when the plan has it', async (
   await ui.unmount()
 })
 
-test('/plan <path> points this repo at its own plan', async ($, on) => {
+test('/story plan <path> points this repo at its own plan', async ($, on) => {
   const store = repo(on, { '/repo/plans/roadmap.md': STORY_MD })
   const before = await $.command.run(run('story', 'E12-S03'))
   expect(before.text).toContain('No plan found')
-  const set = await $.command.run(run('plan', 'plans/roadmap.md'))
+  const set = await $.command.run(run('story', 'plan plans/roadmap.md'))
   expect(set.text).toBe('Plan for this repo: /repo/plans/roadmap.md (1 story id in it). /story <id> tracks one.')
   expect(store.plans).toEqual({ '/repo': ['/repo/plans/roadmap.md'] })
   const after = await $.command.run(run('story', 'E12-S03'))
   expect(after.text).toContain('Tracking E12-S03 [DARK]')
-  const cleared = await $.command.run(run('plan', 'clear'))
+  const cleared = await $.command.run(run('story', 'plan clear'))
   expect(cleared.text).toContain("This repo's plan is back to the settings")
 })
 
-test('/plan with no plan finds plan-like markdown in the repo and asks which', async ($, on) => {
+test('/story plan with no plan finds plan-like markdown in the repo and asks which', async ($, on) => {
   repo(on, { '/repo/docs/ROADMAP.md': STORY_MD, '/repo/docs/notes.md': 'nothing' }, {
     '/repo': [{ name: 'docs', kind: 'dir' }, { name: 'node_modules', kind: 'dir' }, { name: 'README.md', kind: 'file' }],
     '/repo/docs': [{ name: 'ROADMAP.md', kind: 'file' }, { name: 'notes.md', kind: 'file' }],
@@ -536,7 +528,30 @@ test('/plan with no plan finds plan-like markdown in the repo and asks which', a
     asked.push(q?.options.map(o => o.label) ?? [])
     return { result: { questions: (e as unknown as { questions: unknown[] }).questions, answers: { [q?.question ?? '']: 'docs/ROADMAP.md' } } } as never
   })
-  const ran = await $.command.run(run('plan', ''))
+  const ran = await $.command.run(run('story', 'plan'))
   expect(asked[0]).toEqual(['docs/ROADMAP.md', 'None of these'])
   expect(ran.text).toBe('Plan for this repo: /repo/docs/ROADMAP.md (1 story id in it). /story <id> tracks one.')
+})
+
+test('a short terminal (macOS 80×24) still shows the pet, dropping info rows instead', async ($, on) => {
+  engine(on, '')
+  for (const maxRows of [4, 6, 8]) {
+    const short = band(80)
+    const ui = await $.ui.mount({ plugin: 'pixel-pets', surface: 'terminal', ...short, props: { ...short.props, maxRows } } as never)
+    expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeDefined()
+    expect(await ui.find({ text: ' READY.' })).toBeDefined()
+    await ui.unmount()
+  }
+  const roomy = band(80)
+  const ui = await $.ui.mount({ plugin: 'pixel-pets', surface: 'terminal', ...roomy, props: { ...roomy.props, maxRows: 12 } } as never)
+  expect(await ui.find({ text: /CLAUDE PETS/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a tiny band (3 rows) leaves the pet out rather than squash it', async ($, on) => {
+  engine(on, '')
+  const tiny = band(80)
+  const ui = await $.ui.mount({ plugin: 'pixel-pets', surface: 'terminal', ...tiny, props: { ...tiny.props, maxRows: 3 } } as never)
+  expect(await ui.find({ type: 'Raster', key: 'pet' })).toBeUndefined()
+  await ui.unmount()
 })

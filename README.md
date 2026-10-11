@@ -36,12 +36,12 @@ claude --plugin-dir ./plugins/pixel-pets
 ### The band
 - **Plan usage**: the 5-hour and weekly windows as bars with reset countdowns, plus context fill. They refresh every 30 seconds, with warnings at 80% and 95%, and at 85% context.
 - **Branch and worktree**: repo name, branch and uncommitted file count. A red `≠` appears when the branch names a different epic than the story you're tracking.
-- **Backlog story**: status, title, epic and tasks read from your project's markdown plan (see below), not from an issue tracker. A project without one just shows `NO PLAN YET · /plan TO POINT AT YOURS`.
+- **Backlog story**: status, title, epic and tasks read from your project's markdown plan (see below), not from an issue tracker. A project without one just shows `NO PLAN YET · /story plan TO POINT AT YOURS`.
 - **Tests**: pass/fail from the last Playwright, Jest, Vitest, pytest, dotnet or npm test run.
 - **Themes**: `/retro theme ice` (cyan on navy, the default), `phosphor` (green CRT), `amber`, or `c64`.
 
 ### The pet game
-A 7×4-pixel pet walks the bottom of the band. Pick one of 14 with `/pet list` and `/pet <animal>`:
+A 7×4-pixel pet walks the bottom of the band. It always gets its three rows first: in a short terminal (macOS's default 80×24, say) the info rows above it drop out one by one instead, so the pet never disappears. Pick one of 14 with `/pet list` and `/pet <animal>`:
 
 🐈 cat · 🐕 dog · 🦀 crab · 🦈 shark · 🐢 turtle · 🐁 mouse · 🦊 fox · 🐋 orca · 🐳 whale · 🐬 dolphin · 🦒 giraffe · 🐅 tiger · 🐿 squirrel · 🐧 penguin
 
@@ -78,7 +78,7 @@ Change them in `/config` under pixel-pets, or in `settings.json` under `pluginCo
 
 | Setting | Default | |
 |---|---|---|
-| `backlogFiles` | `docs/backlog/BACKLOG.md, BACKLOG.md, docs/milestones.md` | Comma-separated markdown files to search for a story id, for any repo that hasn't set its own with `/plan` |
+| `backlogFiles` | `docs/backlog/BACKLOG.md, BACKLOG.md, docs/milestones.md` | Comma-separated markdown files to search for a story id, for any repo that hasn't set its own with `/story plan` |
 | `storyIdPattern` | `\b([A-Z]\d{1,3}-[A-Z]?\d{1,3})\b` | Regex with one capture group; matches `E12-S03`, `M1-14` |
 | `defectCommand` | *(empty)* | What `/defect` starts with, e.g. `/report-defect` |
 | `petKind` | `cat` | Starting pet |
@@ -115,14 +115,14 @@ Statuses are recognised by words or symbols: live, done/✅, built-not-enabled (
 Pick a story with `/story E12-S03`, or just mention its id in a prompt. A branch named like `feat/e12-s03` selects it at startup. An id is only tracked if the plan actually has it, so a stray code in a prompt never takes over the band. Each repo remembers its own story.
 
 ### Pointing a project at its plan
-Every repo can have its own plan file, so nothing is hard-wired:
+Every repo can have its own plan file, so nothing is hard-wired. (It's `/story plan` rather than `/plan`, which is Claude Code's own plan mode.)
 
 | Command | |
 |---|---|
-| `/plan` | Shows this repo's plan; if it has none, looks through the repo for plan-like markdown (backlog, roadmap, plan, milestones, todo, stories, tasks, sprint), ranks it by how many story ids it holds, and asks which one to use |
-| `/plan pick` | Asks again, even when a plan is already set |
-| `/plan docs/ROADMAP.md` | Sets the plan directly (relative to the repo, or absolute) |
-| `/plan clear` | Goes back to the `backlogFiles` setting |
+| `/story plan` | Shows this repo's plan; if it has none, looks through the repo for plan-like markdown (backlog, roadmap, plan, milestones, todo, stories, tasks, sprint), ranks it by how many story ids it holds, and asks which one to use |
+| `/story plan pick` | Asks again, even when a plan is already set |
+| `/story plan docs/ROADMAP.md` | Sets the plan directly (relative to the repo, or absolute) |
+| `/story plan clear` | Goes back to the `backlogFiles` setting |
 
 ## Sounds
 The only sound is **your current pet's own voice**: a meow, a woof, a roar, a whale song… and a grumpy version once your plan is nearly spent. It plays when a long turn ends, on a level-up, when the mood worsens and when you pat it, at most once every 20 seconds and at a gentle volume.

@@ -250,7 +250,7 @@ async function firstExisting($: EngineInterface, paths: string[]): Promise<strin
 }
 
 // ── The plan: the markdown a project's stories live in ──────────────────────
-// Each repo can point at its own (/plan), stored by repo root; otherwise the
+// Each repo can point at its own (/story plan), stored by repo root; otherwise the
 // settings' backlogFiles apply. A story id is only ever tracked if the plan has it.
 const normPath = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '')
 const isAbsPath = (p: string) => /^([a-z]:)?\//i.test(normPath(p))
@@ -404,11 +404,11 @@ async function planHint($: EngineInterface): Promise<string> {
   const { files, isRepo } = await planFiles($)
   const existing = await existingFiles($, files)
   if (!existing.length) {
-    return `No plan found for this project (looked for ${files.join(', ')}). Run /plan to pick one, or /plan path/to/plan.md.`
+    return `No plan found for this project (looked for ${files.join(', ')}). Run /story plan to pick one, or /story plan path/to/plan.md.`
   }
   const where = existing.join(', ') + (isRepo ? '' : ' (from settings)')
   return missing
-    ? `${missing} isn't in the plan (${where}). /story <id> tracks another, /plan points at a different file.`
+    ? `${missing} isn't in the plan (${where}). /story <id> tracks another, /story plan points at a different file.`
     : `No story tracked. Plan: ${where}. /story <id> tracks one.`
 }
 
@@ -473,7 +473,8 @@ async function refreshStatus($: EngineInterface) {
 // coins drop for every tool call that succeeds, bugs crawl in on every error and
 // the pet hunts them. XP is saved between sessions.
 const PET_ROWS = 3 // 2 rows of pixels (4 px) + the ground row, which carries the HUD
-const BAND_ROWS_WITH_PET = 9
+// The pet needs its strip and the READY. line; info rows fill whatever room is left.
+const PET_MIN_ROWS = PET_ROWS + 1
 const SPRITE_W = 7
 
 type Pose = 'walkA' | 'walkB' | 'sit' | 'sleep'
@@ -1421,8 +1422,10 @@ function usageRow(Box: unknown, Text: unknown, C: Palette, u: Usage, now: number
 
 const COMMANDS: { name: string; description: string }[] = [
   { name: 'qa-pane', description: 'Open the retro QA MONITOR pane' },
-  { name: 'story', description: 'Track a backlog story from markdown: /story E12-S03 · /story M1-14 · /story clear' },
-  { name: 'plan', description: 'Which markdown is this project\'s plan: /plan (show) · /plan pick · /plan path/to/plan.md · /plan clear' },
+  {
+    name: 'story',
+    description: 'Track a backlog story from markdown: /story E12-S03 · /story clear · /story plan (pick this repo\'s plan file)',
+  },
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
@@ -1590,8 +1593,9 @@ export const register: Register = (on, options) => {
     return { text: hidden ? 'Band hidden. /retro brings it back.' : 'Band shown. READY.' }
   })
 
-  on('command.run', { command: 'story' }, async ($, e) => {
+  on('command.run', { command: 'story' }, async ($, e, next) => {
     const args = e.args.trim()
+    if (/^plan\b/i.test(args)) return next(e)
     if (/^(clear|reset|none)$/i.test(args)) {
       await selectStory($, null)
       return { text: 'Story cleared.' }
@@ -1617,8 +1621,10 @@ export const register: Register = (on, options) => {
     return { text: s ? `Tracking ${s.id} [${s.status}] ${s.title}` : await planHint($) }
   })
 
-  on('command.run', { command: 'plan' }, async ($, e) => {
-    const args = e.args.trim()
+  // /story plan …: which markdown is this repo's plan (Claude Code owns /plan itself)
+  on('command.run', { command: 'story' }, async ($, e, next) => {
+    if (!/^plan\b/i.test(e.args.trim())) return next(e)
+    const args = e.args.trim().replace(/^plan\s*/i, '')
     const { files, isRepo, root } = await planFiles($)
     const use = async (path: string) => {
       await setRepoPlan($, root, [path])
@@ -1634,19 +1640,19 @@ export const register: Register = (on, options) => {
     }
     if (args && !/^pick$/i.test(args)) {
       const path = isAbsPath(args) ? normPath(args) : `${root}/${normPath(args).replace(/^\.\//, '')}`
-      if (!(await firstExisting($, [path]))) return { text: `${path} doesn't exist. /plan pick lists the plan-like files in this repo.` }
+      if (!(await firstExisting($, [path]))) return { text: `${path} doesn't exist. /story plan pick lists the plan-like files in this repo.` }
       return use(path)
     }
     if (!args) {
       const existing = await existingFiles($, files)
       if (existing.length) {
         return {
-          text: [`Plan for ${root}${isRepo ? '' : ' (from settings)'}:`, ...existing.map(f => `  ${f}`), '/plan pick chooses another · /plan <file> · /plan clear'].join('\n'),
+          text: [`Plan for ${root}${isRepo ? '' : ' (from settings)'}:`, ...existing.map(f => `  ${f}`), '/story plan pick chooses another · /story plan <file> · /story plan clear'].join('\n'),
         }
       }
     }
     const found = await discoverPlans($, root)
-    if (!found.length) return { text: `No plan-like markdown (backlog, roadmap, plan, milestones…) found in ${root}. Point at yours: /plan path/to/plan.md` }
+    if (!found.length) return { text: `No plan-like markdown (backlog, roadmap, plan, milestones…) found in ${root}. Point at yours: /story plan path/to/plan.md` }
     const picked = await askPlan($, root, found)
     if (!picked) return { text: 'Plan unchanged.' }
     if (!(await firstExisting($, [picked]))) return { text: `${picked} doesn't exist.` }
@@ -1783,7 +1789,7 @@ export const register: Register = (on, options) => {
     const { Box, Text } = $.ui.resolve(e)
     const W = Math.max(20, e.props.bodyColumns)
     const isTerminal = e.surface === 'terminal'
-    const wantsPet = (await read($, petShown)) && e.props.maxRows >= BAND_ROWS_WITH_PET
+    const wantsPet = (await read($, petShown)) && e.props.maxRows >= PET_MIN_ROWS
     const withStrip = wantsPet && isTerminal
     const [t, en, tok, res, model, cursor, entries, themeName, s, err, u, now, pet, line] = await Promise.all([
       read($, ticket),
@@ -1828,18 +1834,33 @@ export const register: Register = (on, options) => {
     const left = Math.max(0, Math.floor((W - 2 - C.banner.length) / 2))
     const running = entries.filter(l => l.state === 'run').pop()
     const doneTasks = s ? s.tasks.filter(x => x.status === 'LIVE' || x.status === 'DONE').length : 0
+    // Row budget: a short terminal (macOS's 80×24 in fullscreen leaves ~8 rows) keeps the pet
+    // and READY., then the rows that matter most, dropping the rest.
+    let room = e.props.maxRows - 1 - (strip ? PET_ROWS : e.props.isWorking ? 0 : 1)
+    const fits = (wanted = true) => {
+      if (!wanted || room < 1) return false
+      room--
+      return true
+    }
+    const showStory = fits()
+    const showUsage = fits()
+    const showBanner = fits()
+    const showGit = fits()
+    const showEpic = fits(Boolean(s || res))
 
     return (
       <Box flexDirection="column" width={W} backgroundColor={C.bg} paddingX={1}>
-        <Box flexDirection="row">
-          <Text color={C.fg} backgroundColor={C.bg} bold>
-            {pad(' '.repeat(left) + C.banner, W - 2 - C.stripes.length * 2)}
-          </Text>
-          {C.stripes.map(c => (
-            <Text color={c} backgroundColor={C.bg}>▐▌</Text>
-          ))}
-        </Box>
-        {g ? (
+        {showBanner && (
+          <Box flexDirection="row">
+            <Text color={C.fg} backgroundColor={C.bg} bold>
+              {pad(' '.repeat(left) + C.banner, W - 2 - C.stripes.length * 2)}
+            </Text>
+            {C.stripes.map(c => (
+              <Text color={c} backgroundColor={C.bg}>▐▌</Text>
+            ))}
+          </Box>
+        )}
+        {!showGit ? null : g ? (
           <Box flexDirection="row">
             <Text color={C.dim} backgroundColor={C.bg}>{' 64K '}</Text>
             <Text color={C.hi} backgroundColor={C.bg}>{g.worktree.toUpperCase()}</Text>
@@ -1854,8 +1875,8 @@ export const register: Register = (on, options) => {
             {` 64K RAM SYSTEM  ${fmtModel(model)}  ${fmtTokens(tok)} TOKENS USED`}
           </Text>
         )}
-        {usageRow(Box, Text, C, u, now, W >= 90 ? 10 : 6)}
-        {s ? (
+        {showUsage && usageRow(Box, Text, C, u, now, W >= 90 ? 10 : 6)}
+        {!showStory ? null : s ? (
           <Box flexDirection="row">
             <Text color={C.dim} backgroundColor={C.bg}>{' STORY '}</Text>
             <Text color={C.hi} backgroundColor={C.bg} bold>{s.id}</Text>
@@ -1873,12 +1894,12 @@ export const register: Register = (on, options) => {
           <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
             {plan
               ? err
-                ? ` ${err} ISN'T IN ${plan.toUpperCase()} · /story <ID> · /plan TO CHANGE`
+                ? ` ${err} ISN'T IN ${plan.toUpperCase()} · /story plan TO CHANGE`
                 : ` PLAN ${plan.toUpperCase()} · /story <ID> TO TRACK A ROW`
-              : ' NO PLAN YET · /plan TO POINT AT YOURS'}
+              : ' NO PLAN YET · /story plan TO POINT AT YOURS'}
           </Text>
         )}
-        {(s || res) && (
+        {showEpic && (
           <Box flexDirection="row">
             {s && (
               <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
@@ -1962,7 +1983,7 @@ export const register: Register = (on, options) => {
           </Box>
         ) : (
           <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">
-            {err ? `${err} ISN'T IN THE PLAN · /plan TO CHANGE` : 'NO STORY. /story <ID> · /plan TO SET THE PLAN'}
+            {err ? `${err} ISN'T IN THE PLAN · /story plan TO CHANGE` : 'NO STORY. /story <ID> · /story plan TO SET THE PLAN'}
           </Text>
         )}
         <Text color={C.fg} backgroundColor={C.bg}> </Text>
