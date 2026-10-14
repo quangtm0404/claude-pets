@@ -359,7 +359,7 @@ So that the banner looks the way I like.
 
 </details>
 
-## P4 · Play, share and seasons - 🟡 In progress
+## P4 · Play, share and seasons - ✅ Done
 
 ### E6 · Play - ✅ Done
 
@@ -491,7 +491,7 @@ So that I can look back on, and share, what my pet and I did.
 
 </details>
 
-### E8 · Life and seasons - 🟡 In progress
+### E8 · Life and seasons - ✅ Done
 
 **Outcome.** The pet keeps you company through the day, the week and the year.
 
@@ -512,7 +512,7 @@ So that I can work in focused blocks.
 
 </details>
 
-<details><summary><b>E8-S02</b> - as a <b>user</b>, I want <b>gentle reminders to stretch and drink water</b> · ⬜ To do · 2 pts</summary>
+<details><summary><b>E8-S02</b> - as a <b>user</b>, I want <b>gentle reminders to stretch and drink water</b> · ✅ Done · 2 pts</summary>
 
 So that long sessions don't wear me out.
 
@@ -523,12 +523,12 @@ So that long sessions don't wear me out.
 
 | Task | Kind | Status |
 |---|---|---|
-| Activity timer and the reminder | technical | ⬜ To do |
-| Interval, once-an-hour and off asserted | testing | ⬜ To do |
+| Activity timer and the reminder | technical | ✅ Done |
+| Interval, once-an-hour and off asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E8-S03</b> - as a <b>user</b>, I want <b>seasons and local festivals in the band</b> · ⬜ To do · 5 pts</summary>
+<details><summary><b>E8-S03</b> - as a <b>user</b>, I want <b>seasons and local festivals in the band</b> · ✅ Done · 5 pts</summary>
 
 So that the band changes with the year.
 
@@ -539,13 +539,13 @@ So that the band changes with the year.
 
 | Task | Kind | Status |
 |---|---|---|
-| Festival calendar, lunar dates included | technical | ⬜ To do |
-| Festival art in cells and SVG | technical | ⬜ To do |
-| Dates for several years asserted | testing | ⬜ To do |
+| Festival calendar, lunar dates included | technical | ✅ Done |
+| Festival art in cells and SVG | technical | ✅ Done |
+| Dates for several years asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E8-S04</b> - as a <b>player</b>, I want <b>my pet to have a birthday</b> · ⬜ To do · 2 pts</summary>
+<details><summary><b>E8-S04</b> - as a <b>player</b>, I want <b>my pet to have a birthday</b> · ✅ Done · 2 pts</summary>
 
 So that the day I adopted it is celebrated.
 
@@ -555,12 +555,12 @@ So that the day I adopted it is celebrated.
 
 | Task | Kind | Status |
 |---|---|---|
-| Adoption date and the birthday look | technical | ⬜ To do |
-| Birthday and the one-off gift asserted | testing | ⬜ To do |
+| Adoption date and the birthday look | technical | ✅ Done |
+| Birthday and the one-off gift asserted | testing | ✅ Done |
 
 </details>
 
-<details><summary><b>E8-S05</b> - as a <b>user</b>, I want <b>my pet to say something now and then (opt-in)</b> · ⬜ To do · 3 pts</summary>
+<details><summary><b>E8-S05</b> - as a <b>user</b>, I want <b>my pet to say something now and then (opt-in)</b> · ✅ Done · 3 pts</summary>
 
 So that it has a personality.
 
@@ -572,8 +572,8 @@ So that it has a personality.
 
 | Task | Kind | Status |
 |---|---|---|
-| Chatter with a small model, rate limit and opt-in | technical | ⬜ To do |
-| Off by default, the rate limit and what is sent asserted | testing | ⬜ To do |
+| Chatter with a small model, rate limit and opt-in | technical | ✅ Done |
+| Off by default, the rate limit and what is sent asserted | testing | ✅ Done |
 
 </details>
 

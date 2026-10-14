@@ -8,9 +8,12 @@ import {
   hdSprite, isItemId, isSkinId, itemPixels, nextStage, roundedPath, skinColors, sprite, stageOf, traceLoops, vectorPet,
 } from './art'
 import type { ItemId, Mood, PetArt, Pose, Rarity, SkinId, Stage } from './art'
+import { birthdayAge, daysBetween, festivalOn, nextBirthday, upcomingFestivals } from './seasons'
+import type { Festival, FestivalId } from './seasons'
 
 export { ITEMS, babySprite, extrasFor, sprite, stageOf } from './art'
 export type { ItemId, Mood, Stage } from './art'
+export { birthdayAge, festivalOn, midAutumnOf, nextBirthday, tetOf, upcomingFestivals } from './seasons'
 
 import type {
   Failure, FontName, GitInfo, LogLine, PetKind, Story, StoryStatus, StoryTask, TestRun, ThemeName, Usage, UsageWindow,
@@ -364,6 +367,10 @@ const CFG = {
   theme: 'ice',
   /** The banner's letters until /retro font picks (E5-S04). */
   font: 'plain' as FontName,
+  /** Minutes of work before the pet suggests a break, 0 for never, until /pet breaks sets it (E8-S02). */
+  breaks: 60,
+  /** Festivals in the band, until /pet festivals sets it (E8-S03). */
+  festivals: true,
 }
 
 export function configure(options: PluginOptions) {
@@ -392,6 +399,18 @@ export function configure(options: PluginOptions) {
   CFG.theme = parseTheme(str('theme')) ?? 'ice'
   const f = str('font').toLowerCase()
   CFG.font = isFontName(f) ? f : 'plain'
+  CFG.breaks = parseBreaks(str('breaks')) ?? 60
+  CFG.festivals = !/^(off|no|false|0)$/i.test(str('festivals'))
+}
+
+/** `60`, `45 min`, `off`: minutes of work before a break reminder, 0 for never; null when it isn't one. */
+export function parseBreaks(v: string): number | null {
+  const a = v.trim().toLowerCase()
+  if (!a || a === 'on') return a ? 60 : null
+  if (/^(off|no|never|false|0)$/.test(a)) return 0
+  const m = /^(\d{1,3})\s*(m|min|mins|minutes)?$/.exec(a)
+  const n = m ? Number(m[1]) : NaN
+  return n >= 15 && n <= 240 ? n : null
 }
 
 const PANE = 'qa-monitor'
@@ -885,6 +904,8 @@ export type PetFrame = {
   box?: { x: number; isOpen: boolean; shake: number } | null
   /** Draw only the scene, no pets (the SVG draws them as shapes). */
   sceneOnly?: boolean
+  /** A festival's decorations behind the pet (E8-S03). */
+  festival?: FestivalId | null
 }
 
 /** How many terminal rows the strip takes: the pixels, two to a row, and the ground. */
@@ -939,6 +960,7 @@ export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: n
       for (let x = 0; x < W; x++) if ((x + Math.floor(t / 6)) % 3 === 0) set(x, 1 + (x % 2), 0x6f7a85)
     }
   }
+  if (f.festival) drawFestival(set, f.festival, W, H, f.tick ?? 0)
   for (const cx of f.coins) {
     set(Math.round(cx), H - 2, f.sparkle ? COIN_SHINE : COIN)
     set(Math.round(cx), H - 1, COIN)
@@ -1017,6 +1039,63 @@ export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: n
   const x0 = Math.round(f.x)
   pw = drawPet(f.kind, f.stage ?? 'adult', f.pose, f.mood, f.items ?? [], x0, f.dir, f.lift, f.flame ?? false, f.skin ?? null)
   return { px, W, H, x0, pw }
+}
+
+const FIREWORK = [0xff5252, 0xffd23f, 0x69f0ae, 0x40c4ff, 0xe040fb]
+
+/**
+ * A festival's decorations (E8-S03), drawn behind the pet: red lanterns at Tết, the
+ * full moon and mooncakes at Mid-Autumn, a tree in the snow at Christmas, fireworks at New Year.
+ */
+function drawFestival(set: (x: number, y: number, c: number) => void, id: FestivalId, W: number, H: number, t: number) {
+  const tall = H > 4
+  if (id === 'tet') {
+    for (let i = 0, x = 5; x < W - 4; i++, x += 17) {
+      const sway = ((t >> 3) + i) % 4 === 0 ? 1 : 0
+      set(x + sway, 0, 0xffc107)
+      for (let y = 1; y <= (tall ? 3 : 2); y++) for (let dx = 0; dx < 2; dx++) set(x + dx + sway, y, y === 2 && tall ? 0xffc107 : 0xe53935)
+      if (tall) set(x + sway, 4, 0xffc107)
+    }
+  } else if (id === 'midautumn') {
+    // a round full moon, and mooncakes spread along the ground
+    const mx = W - 13, disc = tall ? ['.##.', '####', '####', '.##.'] : ['.##.', '####', '.##.']
+    disc.forEach((r, dy) => [...r].forEach((ch, dx) => ch === '#' && set(mx + dx, dy, dy === 1 && dx === 1 ? 0xffe28a : 0xfff1b8)))
+    for (let i = 0; i < 3; i++) {
+      const cx = 6 + i * Math.max(4, Math.floor((W - 22) / 3))
+      set(cx, H - 2, 0xe0a85a)
+      set(cx + 1, H - 2, 0xe0a85a)
+      set(cx, H - 1, 0xb87333)
+      set(cx + 1, H - 1, 0xb87333)
+    }
+  } else if (id === 'christmas') {
+    for (let x = 0; x < W; x++) {
+      if (hash(x + 11) % 6 !== 0) continue
+      set(x, (Math.floor(t / 3) + hash(x + 3)) % (H - 1), 0xf0f6ff)
+    }
+    const tx = W - 16, levels = tall ? [1, 1, 3, 3, 5, 5, 7] : [1, 3, 5]
+    set(tx, 0, 0xffd23f)
+    levels.forEach((w, i) => {
+      const y = i + 1
+      if (y >= H - 1) return
+      for (let dx = -(w >> 1); dx <= w >> 1; dx++) {
+        const bauble = w > 1 && (hash(tx + dx * 7 + y * 13) % 5 === 0)
+        set(tx + dx, y, bauble ? ((t >> 2) + dx + y) % 2 ? 0xff5252 : 0xffd23f : 0x2e7d32)
+      }
+    })
+    set(tx, H - 1, 0x795548)
+  } else {
+    for (let i = 0; i < 2; i++) {
+      const life = 28, phase = (t + i * 14) % life, cycle = Math.floor((t + i * 14) / life)
+      const cx = 4 + (hash(cycle * 13 + i * 7) % Math.max(1, W - 8)), cy = tall ? 2 : 1
+      const c = FIREWORK[(cycle + i) % FIREWORK.length]!
+      if (phase < 6) {
+        set(cx, H - 1 - Math.round(((H - 1 - cy) * phase) / 6), 0xfff6a0)
+      } else if (phase < 22) {
+        const r = Math.min(tall ? 3 : 2, 1 + Math.floor((phase - 6) / 4))
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) set(cx + dx * r, cy + Math.round(dy * r * 0.6), c)
+      }
+    }
+  }
 }
 
 /** Packs one frame into Raster cells: [codePoint, fg, bg] u32 triplets, row-major. */
@@ -1197,7 +1276,7 @@ const petSim = {
   remote: { band: false, pane: false },
   lastArt: '',
   sitUntil: 0,
-  react: null as null | { glyph: string; tone: Tone; until: number; jump: boolean; text?: string; kind?: 'dance' | 'rocket' },
+  react: null as null | { glyph: string; tone: Tone; until: number; jump: boolean; text?: string; kind?: ReactKind },
   /** A merge conflict seen and not yet resolved (E6-S04). */
   isConflict: false,
   /** A command running now: since when, and what (E6-S04). */
@@ -1212,6 +1291,10 @@ const petSim = {
   opening: null as null | { x: number; openAt: number; until: number; label: string },
   /** The focus timer, mirrored from the store (E8-S01). */
   focus: null as null | Focus,
+  /** Today's festival, if any and if they are on (E8-S03). */
+  festival: null as null | Festival,
+  /** How old the pet turns today, 0 when it isn't its birthday (E8-S04). */
+  birthday: 0,
   /** A friend's pet visiting for a minute (E7-S02). */
   guest: null as null | { login: string; kind: PetKind; level: number; wearing: ItemId[]; x: number; dir: 1 | -1; pose: Pose; until: number },
   ballX: null as number | null,
@@ -1242,7 +1325,12 @@ function petW(): number {
   return stageOf(levelOf(petSim.xp)) === 'baby' ? BABY_W : HD_W
 }
 
-function petReact(glyph: string, tone: Tone, ms: number, now: number, jump = false, more: { text?: string; kind?: 'dance' | 'rocket' } = {}) {
+type ReactKind = 'dance' | 'rocket' | 'stretch'
+
+/** What the pet wears now: on its birthday, a party hat in place of anything on its head (E8-S04). */
+const worn = (): ItemId[] => (petSim.birthday ? [...petSim.wearing.filter(i => ITEMS[i].slot !== 'head'), 'party'] : petSim.wearing)
+
+function petReact(glyph: string, tone: Tone, ms: number, now: number, jump = false, more: { text?: string; kind?: ReactKind } = {}) {
   petSim.react = { glyph, tone, until: now + ms, jump, ...more }
 }
 
@@ -1428,8 +1516,9 @@ export async function shopCommand($: EngineInterface, verb: 'buy' | 'wear', what
     await writeWallet($, { ...w, wearing: [] })
     return 'Took everything off.'
   }
-  if (!isItemId(id)) return `No item called "${what}". ${ITEM_IDS.join(' · ')}`
+  if (!isItemId(id)) return `No item called "${what}". ${ITEM_IDS.filter(i => !ITEMS[i].isEvent).join(' · ')}`
   const it = ITEMS[id]
+  if (it.isEvent) return `The ${it.name.toLowerCase()} comes out by itself on your pet's birthday. /pet birthday`
   if (verb === 'buy') {
     if (it.price <= 0 && !w.owned.includes(id)) return `The ${it.name.toLowerCase()} only comes out of a blind box (${it.rarity}). /pet box`
     if (w.owned.includes(id)) return `You already have the ${it.name.toLowerCase()}. /pet wear ${id}`
@@ -1462,6 +1551,7 @@ export const LOOT: Record<Rarity, Loot[]> = {
   legendary: [{ kind: 'skin', id: 'golden' }, { kind: 'skin', id: 'galaxy' }, { kind: 'pet', id: 'dragon' }, { kind: 'pet', id: 'unicorn' }, { kind: 'pet', id: 'axolotl' }],
 }
 const RARITY_TAG: Record<Rarity, string> = { common: '◇ COMMON', rare: '◆ RARE', epic: '★ EPIC', legendary: '✦ LEGENDARY' }
+const RARITIES: Rarity[] = ['common', 'rare', 'epic', 'legendary']
 
 /** One box, from two random numbers in [0, 1): its rarity (the pity lifts it), then which find. */
 export function rollBox(a: number, b: number, sinceEpic: number): { rarity: Rarity; loot: Loot } {
@@ -1493,7 +1583,7 @@ async function openBox($: EngineInterface): Promise<string> {
   const w = await readWallet($)
   if (w.boxes < 1) return 'No blind boxes to open. You get one for each level up, each achievement and every 4 focus rounds.'
   const { rarity, loot } = rollBox(Math.random(), Math.random(), w.sinceEpic)
-  const has = loot.kind === 'item' ? w.owned.includes(loot.id) : loot.kind === 'skin' ? w.skins.includes(loot.id) : w.pets.includes(loot.id)
+  const has = hasLoot(w, loot)
   const next: Wallet = { ...w, boxes: w.boxes - 1, sinceEpic: rarity === 'epic' || rarity === 'legendary' ? 0 : w.sinceEpic + 1 }
   if (has) next.coins += SPARE_COINS[rarity]
   else if (loot.kind === 'item') next.owned = [...w.owned, loot.id]
@@ -1518,18 +1608,30 @@ export function boxText(w: Wallet): string {
   return [
     `BLIND BOXES · ${w.boxes} to open${w.boxes ? ' · /pet box open' : ''}`,
     'You get one for each level up, each achievement and every 4 focus rounds.',
-    ...(['common', 'rare', 'epic', 'legendary'] as Rarity[]).map(r => `  ${pct(r)}`),
+    ...RARITIES.map(r => `  ${pct(r)}`),
     `A find you already have is worth coins instead. ${BOX_PITY} boxes in a row without an epic make the next one epic.`,
   ].join('\n')
 }
 
+/** Whether a find is in the wallet. */
+export const hasLoot = (w: Wallet, l: Loot) =>
+  l.kind === 'item' ? w.owned.includes(l.id) : l.kind === 'skin' ? w.skins.includes(l.id) : w.pets.includes(l.id)
+
+/** Every find a box can hold, by rarity: ✓ found (* in use), 🔒 not yet; then the shop items owned. */
 export function collectionText(w: Wallet): string {
-  const items = w.owned.map(id => `${id}${w.wearing.includes(id) ? '*' : ''}`)
+  const all = RARITIES.flatMap(r => LOOT[r])
+  const found = all.filter(l => hasLoot(w, l)).length
+  const inUse = (l: Loot) => (l.kind === 'item' ? w.wearing.includes(l.id) : l.kind === 'skin' && w.skin === l.id)
+  const mark = (l: Loot) => {
+    if (!hasLoot(w, l)) return `🔒 ${l.id}`
+    return l.kind === 'pet' ? `${PETS[l.id].emoji} ${l.id}` : `✓ ${l.id}${inUse(l) ? '*' : ''}`
+  }
+  const bought = w.owned.filter(id => ITEMS[id].price > 0)
   return [
-    `COLLECTION · ◆${w.coins} · ${w.boxes} blind box${w.boxes === 1 ? '' : 'es'} to open`,
-    `Items: ${items.length ? items.join(', ') : 'none yet'}   (* worn · /pet wear <item>)`,
-    `Skins: ${w.skins.length ? w.skins.map(k => `${k}${w.skin === k ? '*' : ''}`).join(', ') : 'none yet'}   (/pet skin <name>|none)`,
-    `Box animals: ${BOX_PETS.map(k => (w.pets.includes(k) ? `${PETS[k].emoji} ${k}` : `🔒 ${k}`)).join(' · ')}`,
+    `COLLECTION · ${found}/${all.length} found · ◆${w.coins} · ${w.boxes} blind box${w.boxes === 1 ? '' : 'es'} to open`,
+    ...RARITIES.map(r => `  ${RARITY_TAG[r].padEnd(12)} ${LOOT[r].map(mark).join('  ')}`),
+    `  Shop items   ${bought.length ? bought.map(id => `${id}${w.wearing.includes(id) ? '*' : ''}`).join('  ') : 'none yet (/pet shop)'}`,
+    '* in use · /pet wear <item> · /pet skin <name>|none · /pet <animal> · /pet box open',
   ].join('\n')
 }
 
@@ -1540,7 +1642,9 @@ async function nowLine($: EngineInterface): Promise<string[]> {
   const g = petSim.guest
   if (g && g.until > (await $.clock.now())) return [`Now: PLAYING WITH ${g.login.toUpperCase()}'S ${g.kind.toUpperCase()} (LV${g.level})`]
   const r = petSim.react
-  return r?.text && r.until > (await $.clock.now()) ? [`Now: ${r.text}`] : []
+  if (r?.text && r.until > (await $.clock.now())) return [`Now: ${r.text}`]
+  if (petSim.birthday) return [`Now: TURNS ${petSim.birthday} TODAY · HAPPY BIRTHDAY!`]
+  return petSim.festival ? [`Now: ${petSim.festival.line}`] : []
 }
 
 // ── The runner game (E6-S01) ─────────────────────────────────────────────────
@@ -1688,6 +1792,164 @@ async function focusCommand($: EngineInterface, arg: string): Promise<string> {
   await setFocus($, { ...p, phase: 'focus', round: 1, endsAt: now + p.focusMin * 60_000 })
   const pet = await readPet($)
   return `Focus ${p.focusMin} min${p.breakMin ? `, then a ${p.breakMin} min break, round after round` : ', one round'}. ${pet.name.toUpperCase()} is on guard: the countdown is in the band. /pet focus stop ends it.`
+}
+
+// ── Break reminders (E8-S02) ─────────────────────────────────────────────────
+// Work is continuous until a pause this long; a turn ending after the set time of it
+// gets the reminder, so it never lands in the middle of one. At most once an hour.
+const BREAK_GAP_MS = 10 * 60_000
+const BREAK_EVERY_MS = 60 * 60_000
+const BREAK_SHOW_MS = 20_000
+const work = { since: 0, lastAt: 0 }
+
+/** Notes a moment of work: a pause longer than BREAK_GAP_MS was a break, and the clock starts over. */
+function noteWork(now: number) {
+  if (!work.lastAt || now - work.lastAt > BREAK_GAP_MS) work.since = now
+  work.lastAt = now
+}
+
+async function breakMinutes($: EngineInterface): Promise<number> {
+  const v = await $.store.get('breaks')
+  return typeof v === 'number' ? v : CFG.breaks
+}
+
+/** After a turn: the reminder, once the work has gone on long enough and none came in the last hour. */
+async function maybeBreak($: EngineInterface, now: number) {
+  const mins = await breakMinutes($)
+  // a focus timer has breaks of its own
+  if (!mins || petSim.focus || now - work.since < mins * 60_000) return
+  const last = await $.store.get('lastBreakAt')
+  if (typeof last === 'number' && now - last < BREAK_EVERY_MS) return
+  await $.store.set('lastBreakAt', now)
+  work.since = now
+  const pet = await readPet($)
+  petReact('~', 'info', BREAK_SHOW_MS, now, false, { text: 'STRETCHES · TIME FOR A BREAK AND SOME WATER', kind: 'stretch' })
+  $.ui.toast(`▶ ${mins} MIN OF WORK · ${pet.name.toUpperCase()} STRETCHES: STAND UP, LOOK AWAY, DRINK SOME WATER`, { timeoutMs: 10_000 })
+  void playSound($, PETS[pet.kind].voice.happy)
+}
+
+// ── Festivals and the birthday (E8-S03/S04) ─────────────────────────────────
+/** A birthday's one-off gift. */
+export const BIRTHDAY_XP = 50
+
+/** The day the pet was adopted: stored the first time, from the earliest date the saves hold. */
+async function adoptedOn($: EngineInterface): Promise<string> {
+  const v = await $.store.get('adoptedOn')
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v
+  const p = (await $.store.get('profile')) as Partial<Profile> | undefined
+  const d = (await $.store.get('diary')) as Partial<Diary> | undefined
+  const dates = [p?.since, d?.day, dayOf(await $.clock.now())].filter((x): x is string => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x))
+  const first = dates.sort()[0]!
+  await $.store.set('adoptedOn', first)
+  return first
+}
+
+/** Today's festival and birthday; the birthday's gift the first time it is seen. */
+async function refreshCalendar($: EngineInterface) {
+  const today = dayOf(await $.clock.now())
+  const pick = await $.store.get('festivals')
+  petSim.festival = (typeof pick === 'boolean' ? pick : CFG.festivals) ? festivalOn(today) : null
+  const age = birthdayAge(await adoptedOn($), today)
+  petSim.birthday = age
+  if (!age || (await $.store.get('birthdayGift')) === today) return
+  await $.store.set('birthdayGift', today)
+  const pet = await readPet($)
+  petReact('♥', 'fail', 8000, await $.clock.now(), true, { text: `TURNS ${age} TODAY · HAPPY BIRTHDAY!` })
+  $.ui.toast(`▶ HAPPY BIRTHDAY, ${pet.name.toUpperCase()}! ${age} YEAR${age === 1 ? '' : 'S'} TOGETHER TODAY · +${BIRTHDAY_XP} XP`, { timeoutMs: 10_000 })
+  await gainXp($, BIRTHDAY_XP, 'other')
+  await saveXp($)
+  void petVoice($)
+}
+
+async function birthdayText($: EngineInterface): Promise<string> {
+  await refreshCalendar($)
+  const pet = await readPet($)
+  const adopted = await adoptedOn($)
+  const today = dayOf(await $.clock.now())
+  if (petSim.birthday) return `🎂 It's ${pet.name}'s birthday: ${petSim.birthday} today! The party hat is on, and the gift (+${BIRTHDAY_XP} XP) is in.`
+  const next = nextBirthday(adopted, today)
+  const days = daysBetween(today, next)
+  return `${pet.name} was adopted on ${adopted} (${daysBetween(adopted, today)} days ago). Next birthday: ${next}, in ${days} day${days === 1 ? '' : 's'}, turning ${Number(next.slice(0, 4)) - Number(adopted.slice(0, 4))}: a party hat and +${BIRTHDAY_XP} XP.`
+}
+
+async function festivalsText($: EngineInterface, arg: string): Promise<string> {
+  if (/^(on|off)$/i.test(arg)) {
+    const isOn = /on/i.test(arg)
+    await $.store.set('festivals', isOn)
+    await refreshCalendar($)
+    return isOn ? 'Festivals on: lanterns at Tết, mooncakes at Mid-Autumn, a tree at Christmas, fireworks at New Year.' : 'Festivals off.'
+  }
+  await refreshCalendar($)
+  const today = dayOf(await $.clock.now())
+  const now = petSim.festival
+  return [
+    now ? `Today: ${now.title}! ${now.line.toLowerCase()}` : 'No festival today.',
+    `Coming up: ${upcomingFestivals(today).map(([t, d]) => `${t} ${d}`).join(' · ')}`,
+    'Tết and Mid-Autumn follow the lunar calendar (worked out for each year). /pet festivals on|off',
+  ].join('\n')
+}
+
+// ── Chatter (E8-S05): now and then, a line from the pet (opt-in) ────────────
+// A small model writes it from a summary of the turn built here: how long it took,
+// how many edits, commands and tests ran. No file, path, command, prompt or answer
+// text is ever sent. It shows in the HUD and is never added to the conversation.
+export const CHATTER_EVERY_MS = 20 * 60_000
+const CHATTER_SHOW_MS = 9000
+type TurnLog = { counts: Record<string, number>; failed: number; tests: { passed: number; failed: number } | null }
+const turnLog: TurnLog = { counts: {}, failed: 0, tests: null }
+let lastChatAt = 0
+
+/** A tool's kind for the summary: never its input. */
+export function toolKind(tool: string): string {
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool)) return 'edits'
+  if (/^(Bash|PowerShell)$/.test(tool)) return 'commands'
+  if (/^(Read|Glob|Grep|LS)$/.test(tool)) return 'file reads'
+  if (/^Web/.test(tool)) return 'web lookups'
+  if (/^(Agent|Task)$/.test(tool)) return 'helpers'
+  if (tool.startsWith('mcp__')) return 'connector calls'
+  return 'other steps'
+}
+
+const partOfDay = (ms: number) => {
+  const h = new Date(ms).getHours()
+  return h < 5 ? 'late at night' : h < 12 ? 'in the morning' : h < 18 ? 'in the afternoon' : h < 22 ? 'in the evening' : 'late at night'
+}
+
+/** What the model is told about the turn: counts and the pet's state only. */
+export function turnSummary(t: TurnLog, durationMs: number, mood: Mood, at: number, isError: boolean): string {
+  const counts = Object.entries(t.counts).map(([k, n]) => `${n} ${k}`).join(', ')
+  return [
+    `A turn of ${durationMs < 60_000 ? `${Math.max(1, Math.round(durationMs / 1000))} seconds` : `${Math.round(durationMs / 60_000)} minutes`} ${partOfDay(at)}${isError ? ' that ended in an error' : ''}.`,
+    counts ? `Steps: ${counts}${t.failed ? ` (${t.failed} failed)` : ''}.` : 'No tools used, just talk.',
+    t.tests ? `Tests: ${t.tests.passed} passed, ${t.tests.failed} failed.` : '',
+    `The pet's mood: ${mood}.`,
+  ].filter(Boolean).join(' ')
+}
+
+async function chatter($: EngineInterface, summary: string) {
+  const pet = await readPet($)
+  const r = await $.model.complete({
+    model: 'haiku',
+    system: `You are ${pet.name}, a small pixel ${pet.kind} who lives in a developer's terminal. Reply with one short, warm, playful line (at most 60 characters) about what just happened. No quotes, emoji or hashtags.`,
+    prompt: `What just happened: ${summary}`,
+    maxTokens: 40,
+    effort: 'low',
+    timeoutMs: 10_000,
+  }).catch(() => null)
+  if (!r?.isAnswered) return
+  const line = r.text.split('\n')[0]!.replace(/^["'“”\s]+|["'“”\s]+$/g, '').slice(0, 70)
+  if (line) petReact('"', 'info', CHATTER_SHOW_MS, await $.clock.now(), false, { text: `SAYS: ${line}` })
+}
+
+/** After a main turn: a line, if chatter is on and the last was long enough ago. */
+async function maybeChatter($: EngineInterface, durationMs: number, isError: boolean) {
+  if ((await $.store.get('chatter')) !== true) return
+  const now = await $.clock.now()
+  const last = await $.store.get('lastChatAt')
+  if (now - Math.max(lastChatAt, typeof last === 'number' ? last : 0) < CHATTER_EVERY_MS) return
+  lastChatAt = now
+  await $.store.set('lastChatAt', now)
+  void chatter($, turnSummary(turnLog, durationMs, petSim.mood, now, isError))
 }
 
 const LONG_TOOL_MS = 60_000
@@ -2063,7 +2325,7 @@ function stillFrame(pet: { kind: PetKind; name: string }, C: Palette, columns: n
     bubble: null, ballX: petSim.ballX, coins: petSim.coins, bugs: petSim.bugs, sparkle: false,
     bg: C.bg, ground: C.dim, cursor: null,
     hud: hud(C, name, petSim.line || `${name} THE ${pet.kind.toUpperCase()}`),
-    stage: stageOf(levelOf(petSim.xp)), items: petSim.wearing, hd: petSim.hd, skin: petSim.skin,
+    stage: stageOf(levelOf(petSim.xp)), items: worn(), hd: petSim.hd, skin: petSim.skin, festival: petSim.festival?.id ?? null,
   }
 }
 
@@ -2088,6 +2350,12 @@ function hud(C: Palette, name: string, line: string): HudSegment[] {
     { text: ` ◆${s.collected}`, color: hex(C.warn) },
     { text: ` · ${line || name}`, color: hex(s.mood === 'happy' ? C.dim : s.mood === 'grumpy' ? C.warn : C.fail) },
   ]
+}
+
+/** The idle line on a birthday or a festival day, else null. */
+function seasonLine(name: string): string | null {
+  if (petSim.birthday) return `${name} TURNS ${petSim.birthday} TODAY · HAPPY BIRTHDAY!`
+  return petSim.festival ? `${name} ${petSim.festival.line}` : null
 }
 
 async function petTick($: EngineInterface) {
@@ -2160,6 +2428,10 @@ async function petTick($: EngineInterface) {
       lift = 1
       flame = true
     }
+    if (s.react.kind === 'stretch') {
+      lift = s.tick % 16 < 8 ? 1 : 0
+      pose = s.tick % 32 < 16 ? 'sit' : walk(4)
+    }
   } else if (s.toolSince !== null && now - s.toolSince > LONG_TOOL_MS) {
     pose = 'sleep'
     bubble = { glyph: ['.', ':', '⁝'][Math.floor(s.tick / 6) % 3] ?? '.', color: hex(C.dim) }
@@ -2205,6 +2477,7 @@ async function petTick($: EngineInterface) {
     line = `${name} BASKS IN THE SUN · ${fmtTemp(s.wx.tempC, CFG.temperatureUnit)}`
   } else if (now < s.sitUntil) {
     line = s.mood === 'grumpy' ? `${name} SULKS · ${s.limitLabel}` : `${name} SITS`
+    if (s.mood === 'happy') line = seasonLine(name) ?? line
     if (s.mood === 'grumpy' && s.tick % 30 < 6) bubble = { glyph: '#', color: hex(C.warn) }
   } else {
     // wanders, heading for coins; a grumpy pet stomps along slower
@@ -2217,6 +2490,7 @@ async function petTick($: EngineInterface) {
       lift = s.tick % 10 < 2 ? 1 : 0
       line = `${name} PLAYS IN THE SNOW`
     }
+    if (s.mood === 'happy') line = seasonLine(name) ?? line
     if (s.mood === 'grumpy' && s.tick % 30 < 6) bubble = { glyph: '#', color: hex(C.warn) }
     if (Math.random() < (s.mood === 'grumpy' ? 0.012 : 0.006)) s.sitUntil = now + 3000 + Math.random() * 4000
     if (nearestCoin === undefined && Math.random() < 0.004) s.dir = s.dir === 1 ? -1 : 1
@@ -2295,7 +2569,7 @@ async function petTick($: EngineInterface) {
     })),
     cursor: !s.isWorking && s.tick % 8 < 4 ? { color: hex(C.fg) } : null,
     hud: hud(C, name, line),
-    stage: stageOf(levelOf(s.xp)), items: s.wearing, flame, hd: s.hd, skin: s.skin,
+    stage: stageOf(levelOf(s.xp)), items: worn(), flame, hd: s.hd, skin: s.skin, festival: s.festival?.id ?? null,
     box: op ? { x: op.x, isOpen: now >= op.openAt, shake: now < op.openAt ? s.tick : 0 } : null,
     guest: s.guest ? { kind: s.guest.kind, x: s.guest.x, dir: s.guest.dir, pose: s.guest.pose, stage: stageOf(s.guest.level), items: s.guest.wearing } : undefined,
   }
@@ -2650,7 +2924,7 @@ const COMMANDS: { name: string; description: string }[] = [
   { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
   {
     name: 'pet',
-    description: 'Claude Pets: /pet help lists everything · /pet box [open] · /pet collection · /pet skin · /pet focus [25/5|45/5|stop] · /pet (show/hide) · /pet weather <city>|here|off · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
+    description: 'Claude Pets: /pet help lists everything · /pet box [open] · /pet collection · /pet skin · /pet focus [25/5|45/5|stop] · /pet breaks · /pet festivals · /pet birthday · /pet chatter on|off · /pet (show/hide) · /pet weather <city>|here|off · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
   },
   // not `standup`: other plugins commonly own that name
   { name: 'standup64', description: 'Three-line standup (Done / Next / Blockers) from this session, copied to the clipboard' },
@@ -2673,8 +2947,12 @@ export const PET_HELP = [
   '  /pet buy <item> · /pet wear <item>|none   buy it; put it on or take it off',
   '  /pet focus [45/5] · stop  a Pomodoro timer your pet guards (25/5 by default); /pet focus help',
   '  /pet box [open]            blind boxes: one per level up, achievement and 4 focus rounds',
-  '  /pet collection            what you have found · /pet skin <name>|none',
+  '  /pet collection            every find, ✓ found or 🔒 not yet · /pet skin <name>|none',
   '  /pet size auto|big|small   the bigger, detailed pet or the small classic one',
+  '  /pet breaks [60|off]       a stretch-and-water reminder after an hour of work',
+  '  /pet festivals [on|off]    Tết, Mid-Autumn, Christmas and New Year in the band',
+  '  /pet birthday              when your pet was adopted; its birthday is a party',
+  '  /pet chatter on|off        now and then, a line from your pet (a small model; off by default)',
   '  /pet play [off]            open (or close) the runner game in the band; click it, then space to jump',
   '  /pet play auto [off]       open it by itself while Claude works (off by default)',
   '  /pet pane                  the pet in a pane of its own (VS Code opens it by itself)',
@@ -2804,6 +3082,8 @@ export const register: Register = (on, options) => {
     $.clock.every(140, () => void petTick($))
     await resumeFocus($)
     $.clock.every(1000, () => void refreshFocusText($))
+    await refreshCalendar($)
+    $.clock.every(60_000, () => void refreshCalendar($))
     // a theme or font picked with /retro wins over the settings'
     const savedTheme = await $.store.get('theme')
     const themeSpec = (typeof savedTheme === 'string' && parseTheme(savedTheme)) || CFG.theme
@@ -2928,6 +3208,7 @@ export const register: Register = (on, options) => {
       return {
         text: [
           `${pet.name} the ${pet.kind} · LV${lv} · XP ${petSim.xp} (LV${lv + 1} at ${nextAt})`,
+          `Adopted ${await adoptedOn($)}${petSim.birthday ? ` · 🎂 ${petSim.birthday} TODAY` : ''}`,
           `Stage: ${stageOf(lv).toUpperCase()}${nextStage(lv) ? ` (${nextStage(lv)!.stage.toUpperCase()} at LV${nextStage(lv)!.at})` : ' (fully grown)'}${petSim.wearing.length ? ` · wearing: ${petSim.wearing.map(i => ITEMS[i].name.toLowerCase()).join(', ')}` : ''}`,
           ...(await nowLine($)),
           `Mood: ${petSim.mood.toUpperCase()}${petSim.limitLabel ? ` (${petSim.limitLabel}${petSim.resetText ? `, resets in ${petSim.resetText}` : ''})` : ''}`,
@@ -2991,6 +3272,34 @@ export const register: Register = (on, options) => {
       return { text: 'The runner is in the band: click it, then space to jump the bugs. /pet play off closes it.' }
     } else if (/^focus\b/i.test(args)) {
       return { text: await focusCommand($, args.replace(/^focus\s*/i, '')) }
+    } else if (/^breaks?(\s+\S+)?$/i.test(args)) {
+      const opt = args.replace(/^breaks?\s*/i, '')
+      if (!opt) {
+        const mins = await breakMinutes($)
+        return { text: mins ? `Break reminders: after ${mins} min of work (at most once an hour, never during a turn). /pet breaks <minutes>|off` : 'Break reminders are off. /pet breaks on (60 min) or /pet breaks <minutes>' }
+      }
+      const mins = parseBreaks(opt)
+      if (mins === null) return { text: 'Usage: /pet breaks 60 (15 to 240 minutes) · /pet breaks off · /pet breaks on' }
+      await $.store.set('breaks', mins)
+      return { text: mins ? `After ${mins} min of work, your pet will stretch and suggest a break (at most once an hour, never during a turn).` : 'Break reminders off.' }
+    } else if (/^(festivals?|seasons?)(\s+(on|off))?$/i.test(args)) {
+      return { text: await festivalsText($, args.replace(/^(festivals?|seasons?)\s*/i, '')) }
+    } else if (/^(birthday|bday|age)$/i.test(args)) {
+      return { text: await birthdayText($) }
+    } else if (/^chatter(\s+(on|off))?$/i.test(args)) {
+      const opt = args.replace(/^chatter\s*/i, '').toLowerCase()
+      const pet = await readPet($)
+      if (opt) await $.store.set('chatter', opt === 'on')
+      const isOn = (await $.store.get('chatter')) === true
+      return {
+        text: isOn
+          ? [
+            `Chatter on: after a turn, at most once every ${CHATTER_EVERY_MS / 60_000} minutes, ${pet.name} says a line in the band.`,
+            'A small model (haiku) writes it from a short summary made here: how long the turn took and how many edits, commands and tests ran.',
+            'Never your files, paths, commands, prompts or answers, and the line never goes into the conversation. A few hundred tokens each. /pet chatter off',
+          ].join('\n')
+          : `Chatter off: ${pet.name} keeps quiet. /pet chatter on`,
+      }
     } else if (/^box(es)?(\s+open)?$/i.test(args)) {
       return { text: /open$/i.test(args) ? await openBox($) : boxText(await readWallet($)) }
     } else if (/^(collection|inventory|bag)$/i.test(args)) {
@@ -3156,6 +3465,7 @@ export const register: Register = (on, options) => {
 
   on('prompt.submit', async ($, e, next) => {
     petSim.lastActive = await $.clock.now()
+    noteWork(petSim.lastActive)
     if (e.text.startsWith('/')) return next(e)
     const t = findTicket(e.text)
     const en = findEnv(e.text)
@@ -3183,6 +3493,10 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     isWorking = true
     petSim.isWorking = true
+    noteWork(await $.clock.now())
+    turnLog.counts = {}
+    turnLog.failed = 0
+    turnLog.tests = null
     game.credited = 0
     game.timer?.cancel()
     if (!game.isManual && (await $.store.get('runnerAuto')) === true) {
@@ -3231,6 +3545,10 @@ export const register: Register = (on, options) => {
         void petVoice($)
       }
       await saveXp($)
+      noteWork(petSim.lastActive)
+      await refreshCalendar($)
+      await maybeBreak($, petSim.lastActive)
+      if (!e.isAborted) await maybeChatter($, e.durationMs, e.reason === 'error')
     } else {
       await kidDone($, e.agentId, !e.isAborted && e.reason !== 'error')
     }
@@ -3262,6 +3580,11 @@ export const register: Register = (on, options) => {
       if (isMainBash) petSim.toolSince = null
     })
     const ok = ran.deny === undefined && ran.isError !== true
+    if ((e as { agentId?: string }).agentId === undefined) {
+      const k = toolKind(String(e.tool))
+      turnLog.counts[k] = (turnLog.counts[k] ?? 0) + 1
+      if (!ok) turnLog.failed++
+    }
     const done: LogLine['state'] = ok ? 'ok' : 'err'
     await update($, log, list => list.map(l => (l.id === line.id ? { ...l, state: done } : l)))
     const agentId = (e as { agentId?: string }).agentId
@@ -3285,6 +3608,7 @@ export const register: Register = (on, options) => {
     if (String(e.tool) === 'Bash' && TEST_CMD_RE.test(line.detail)) {
       const res = parseTests(line.detail, ran.text ?? '')
       if (res) {
+        turnLog.tests = { passed: res.passed, failed: res.failed }
         await update($, tests, () => res)
         await bumpDiary($, d => (res.failed ? d.red++ : d.green++))
         if (res.failed) petReact('!', 'fail', 3500, await $.clock.now(), false, { text: `WINCES: ${res.failed} FAILING` })

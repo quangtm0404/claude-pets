@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.0 — 2026-10-14
+
+Life and seasons, the rest of it ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E8-S02 to S05), and a checklist for your finds.
+
+- **Break reminders** (E8-S02): after an hour of continuous work your pet stretches when the turn ends and suggests a break and some water. At most once an hour, never during a turn, not while a focus timer runs. `/pet breaks <minutes>|off` and a `breaks` setting.
+- **Festivals** (E8-S03): lanterns at Tết, the moon and mooncakes at Mid-Autumn, a tree in the snow at Christmas, fireworks at New Year, in the terminal and as soft shapes on the desktop. Tết and Mid-Autumn are worked out from the lunar calendar (Vietnam's, UTC+7) for each year. `/pet festivals [on|off]` and a `festivals` setting.
+- **A birthday** (E8-S04): the adoption day (for saves from before, the earliest date they hold) comes round each year with a party hat, the band saying how old your pet is, and a one-off +50 XP. `/pet birthday`; `/pet stats` shows the adoption date.
+- **Chatter** (E8-S05, off by default): `/pet chatter on`, and at most once every 20 minutes after a turn your pet says a line in the band, written by Haiku from a summary of counts. No file, path, command, prompt or answer text is sent; the line never goes into the conversation.
+- **`/pet collection`** is now a checklist: every find by rarity, ✓ found or 🔒 not yet, with how many of the 15 you have.
+
 ## 1.7.0 — 2026-10-11
 
 Surprises and a new look ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E9, E10). The board service is updated too.

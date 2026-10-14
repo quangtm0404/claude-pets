@@ -1,6 +1,6 @@
 {
   "name": "pixel-pets",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code (terminal, desktop app and VS Code), with plan usage, weather, your backlog story, themes you colour yourself, pet voices and guardrails",
   "author": {
     "name": "quangtm0404"
@@ -109,6 +109,22 @@
       "title": "Theme",
       "description": "A preset (ice, phosphor, amber, c64, mint, rose, mono, paper) or your own colours: #FF8800, or #FF8800 on #101010. /retro theme changes it later",
       "default": "ice"
+    },
+    "breaks": {
+      "type": "string",
+      "title": "Break reminders",
+      "description": "Minutes of continuous work before your pet stretches and suggests a break (15 to 240), or off. At most once an hour, never during a turn. /pet breaks changes it later",
+      "default": "60"
+    },
+    "festivals": {
+      "type": "string",
+      "title": "Festivals",
+      "description": "Lanterns at Tết, mooncakes at Mid-Autumn, a tree at Christmas, fireworks at New Year (lunar dates worked out each year). /pet festivals changes it later",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
     },
     "font": {
       "type": "string",

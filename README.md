@@ -86,7 +86,7 @@ A pixel pet walks the bottom of the band. When the band has room it's the detail
 | ★ Epic | 10% | halo; pastel, shadow and ghost skins |
 | ✦ Legendary | 3% | golden and galaxy skins; the dragon, unicorn and axolotl |
 
-A find you already have is worth coins instead (◆10 to ◆150), and ten boxes in a row without an epic make the next one epic. `/pet box` shows the odds, `/pet collection` what you've found, `/pet wear <item>` and `/pet skin <name>|none` use it, and `/pet dragon` (once hatched) switches to it. Skins and items show on your badge too.
+A find you already have is worth coins instead (◆10 to ◆150), and ten boxes in a row without an epic make the next one epic. `/pet box` shows the odds, `/pet collection` a checklist of every find (✓ found, 🔒 not yet, and how many of the 15), `/pet wear <item>` and `/pet skin <name>|none` use it, and `/pet dragon` (once hatched) switches to it. Skins and items show on your badge too.
 
 `/pet name` asks you for a name (or use `/pet name Mochi` directly), `/pet ball` throws a ball, `/pet pat` pats it, `/pet stats` shows progress, and `/pet` on its own hides or shows the pet.
 
@@ -117,6 +117,12 @@ The board runs at `https://claude-pets-board.claude-pets-leaderboard.workers.dev
 - **`/pet focus`**: 25 minutes of focus, then a 5 minute break, round after round. The countdown sits next to `READY.` in the band; your pet guards your focus and stretches with you on breaks.
 - **`/pet focus 45/5`** (or `50/10`, `90/15`; `/pet focus 45` means 45/5) sets your own times. Every fourth break is three times as long.
 - Each finished round chimes and earns XP (10 for 25 minutes). **`/pet focus stop`** ends it; a round cut short earns nothing. The timer carries on through `/reload-plugins`.
+
+### Through the day and the year
+- **Break reminders**: after an hour of continuous work (a pause of 10 minutes counts as a break), your pet stretches when the turn ends and suggests you stand up and drink some water. At most once an hour, never in the middle of a turn, and not while a focus timer runs. **`/pet breaks 45`** changes the time, **`/pet breaks off`** stops them.
+- **Festivals**: red lanterns at Tết, a full moon and mooncakes at Mid-Autumn, a tree in the snow at Christmas, fireworks at New Year. Tết and Mid-Autumn follow the lunar calendar, worked out for each year. **`/pet festivals`** lists the next ones; **`/pet festivals off`** turns them off.
+- **A birthday**: your pet's adoption day comes round each year with a party hat, the band telling how old it is, and a one-off +50 XP. **`/pet birthday`** says when.
+- **Chatter** (off by default): **`/pet chatter on`** and, after a turn, at most once every 20 minutes, your pet says a line in the band. A small model (Haiku) writes it from a summary made on your machine: how long the turn took and how many edits, commands and tests ran. Never your files, paths, commands, prompts or answers, and the line never goes into the conversation.
 
 ### Share your pet (opt-in, for players on the world board)
 - **`/pet card`**: a live badge for your GitHub profile README, drawn by the board in your theme's colours with what your pet wears. It updates as you play; `/pet leave` removes it.
@@ -158,6 +164,8 @@ Change them in `/config` under pixel-pets, or in `settings.json` under `pluginCo
 | `githubClientId` | the public board's app | The world board's GitHub app, for `/pet join` |
 | `theme` | `ice` | A preset or your own colours: `#FF8800`, or `#FF8800 on #101010`. `/retro theme` overrides it |
 | `font` | `plain` | The banner's letters: `plain`, `bold`, `mono`, `double`, `wide` or `pixel`. `/retro font` overrides it |
+| `breaks` | `60` | Minutes of work before a break reminder (15 to 240), or `off`. `/pet breaks` overrides it |
+| `festivals` | `on` | Festivals in the band. `/pet festivals on\|off` overrides it |
 
 ### Backlog formats
 Claude Pets understands two markdown shapes; the first match wins.
@@ -234,6 +242,7 @@ Everything stays local: the backlog files, git and the transcript are read on yo
 - **`/pet weather here`**: your IP address goes to ipapi.co to find your place, only when you run it.
 - **World board**: after `/pet join`, your GitHub login, level, XP, favourite pet and streak go to the board's service; `/pet leave` deletes them.
 - **`/standup64`**: the session's facts and its last few messages go to a Haiku model through your own Claude Code session.
+- **`/pet chatter on`**: after a turn, at most every 20 minutes, a summary of counts (the turn's length, how many edits, commands and tests, your pet's mood) goes to a Haiku model through your own Claude Code session. No file, path, command, prompt or answer text.
 
 ## Development
 ```sh

@@ -1,6 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, breakAfter, focusLabel, focusXp, parseFocus, petPixels, rollBox, stageOf } from './register'
+import {
+  BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, festivalOn, focusLabel, focusXp,
+  midAutumnOf, nextBirthday, parseBreaks, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary,
+} from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
 import { press, step } from './runner'
 
@@ -1104,10 +1107,10 @@ test('E7-S03: /pet diary tells the day; the card is an SVG picture', async ($, o
 // ── E8: life and seasons ────────────────────────────────────────────────────
 const NINE = Date.parse('2026-10-09T09:00:00Z')
 /** A session on a clock the test moves: the store, toasts and sounds it records. */
-function timed(on: On, seed: Record<string, unknown> = {}) {
+function timed(on: On, seed: Record<string, unknown> = {}, now = NINE) {
   const store: Record<string, unknown> = { ...seed }
   const toasts: string[] = []
-  const clock = mock.clock(on, { now: NINE })
+  const clock = mock.clock(on, { now })
   on('session.root', () => ({ value: '/repo' }))
   on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
   on('fs.exists', () => ({ value: false }))
@@ -1285,4 +1288,175 @@ test('E9-S02: box animals and skins need finding first; once found they can be u
   expect((await $.command.run(run('pet', 'wear halo'))).text).toBe('Wearing the halo.')
   expect(store.wallet).toMatchObject({ skin: 'ghost', wearing: ['halo'] })
   expect((await $.command.run(run('pet', 'collection'))).text).toContain('🐉 dragon')
+})
+
+// ── The collection as a checklist ───────────────────────────────────────────
+test('/pet collection lists every find by rarity, found or locked, with a count', () => {
+  const text = collectionText({ coins: 40, owned: ['flower', 'bow'], wearing: ['flower'], boxes: 2, skins: ['ghost'], skin: null, pets: ['dragon'], sinceEpic: 0 })
+  expect(text).toContain('COLLECTION · 3/15 found · ◆40 · 2 blind boxes to open')
+  expect(text).toMatch(/◇ COMMON\s+✓ flower\* {2}🔒 headphones {2}🔒 bandana/)
+  expect(text).toContain('✓ ghost')
+  expect(text).toContain('🐉 dragon')
+  expect(text).toContain('🔒 unicorn')
+  expect(text).toMatch(/Shop items\s+bow/)
+})
+
+// ── E8-S02: break reminders ─────────────────────────────────────────────────
+const turnDone = async ($: { turn: { complete: (x: never) => Promise<unknown> } }, answer = 'ok', durationMs = 60_000) =>
+  $.turn.complete({ answer, durationMs, isAborted: false, turnId: 't', reason: 'answer' } as never)
+
+test('E8-S02: the breaks setting reads minutes or off', () => {
+  expect(parseBreaks('')).toBeNull()
+  expect(parseBreaks('on')).toBe(60)
+  expect(parseBreaks('off')).toBe(0)
+  expect(parseBreaks('45 min')).toBe(45)
+  expect(parseBreaks('5')).toBeNull()
+  expect(parseBreaks('soon')).toBeNull()
+})
+
+test('E8-S02: after an hour of work a finished turn brings a stretch reminder, at most once an hour; a pause starts over', async ($, on) => {
+  const { store, toasts, clock } = timed(on)
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  const reminders = () => toasts.filter(t => t.includes('MIN OF WORK'))
+  // turns every 9 minutes: continuous work
+  for (let i = 0; i < 7; i++) {
+    await turnDone($)
+    await clock.advance(9 * 60_000)
+  }
+  await turnDone($)
+  expect(reminders()).toEqual(['▶ 60 MIN OF WORK · PIXEL STRETCHES: STAND UP, LOOK AWAY, DRINK SOME WATER'])
+  expect((await $.command.run(run('pet', 'stats'))).text).toContain('Now: STRETCHES · TIME FOR A BREAK AND SOME WATER')
+  for (let i = 0; i < 4; i++) {
+    await clock.advance(9 * 60_000)
+    await turnDone($)
+  }
+  expect(reminders()).toHaveLength(1)
+
+  // a 15 minute pause was a break: the clock starts over
+  await clock.advance(15 * 60_000)
+  await turnDone($)
+  await clock.advance(9 * 60_000)
+  await turnDone($)
+  expect(reminders()).toHaveLength(1)
+
+  expect((await $.command.run(run('pet', 'breaks off'))).text).toBe('Break reminders off.')
+  expect(store.breaks).toBe(0)
+  for (let i = 0; i < 10; i++) {
+    await clock.advance(9 * 60_000)
+    await turnDone($)
+  }
+  expect(reminders()).toHaveLength(1)
+  expect((await $.command.run(run('pet', 'breaks 30'))).text).toContain('After 30 min of work')
+})
+
+// ── E8-S03: festivals ───────────────────────────────────────────────────────
+test('E8-S03: Tết and Mid-Autumn are worked out from the lunar calendar for each year', () => {
+  expect([2023, 2024, 2025, 2026, 2027, 2028, 2030].map(tetOf)).toEqual([
+    '2023-01-22', '2024-02-10', '2025-01-29', '2026-02-17', '2027-02-06', '2028-01-26', '2030-02-02',
+  ])
+  expect([2024, 2025, 2026, 2027].map(midAutumnOf)).toEqual(['2024-09-17', '2025-10-06', '2026-09-25', '2027-09-15'])
+  expect(festivalOn('2027-02-05')?.id).toBe('tet')
+  expect(festivalOn('2026-09-25')?.id).toBe('midautumn')
+  expect(festivalOn('2026-12-24')?.id).toBe('christmas')
+  expect(festivalOn('2026-12-31')?.line).toContain('HAPPY NEW YEAR 2027')
+  expect(festivalOn('2026-10-14')).toBeNull()
+})
+
+test('E8-S03: each festival draws its decorations behind the pet', () => {
+  const f = { ...FRAME, columns: 60, tick: 12 }
+  expect(lit(petPixels(f).px, 0xe53935)).toBe(0)
+  expect(lit(petPixels({ ...f, festival: 'tet' }).px, 0xe53935)).toBeGreaterThan(4)
+  expect(lit(petPixels({ ...f, festival: 'christmas' }).px, 0x2e7d32)).toBeGreaterThan(3)
+  expect(lit(petPixels({ ...f, festival: 'midautumn', hd: true }).px, 0xfff1b8)).toBe(11)
+  expect(lit(petPixels({ ...f, festival: 'midautumn' }).px, 0xb87333)).toBe(6)
+  expect(lit(petPixels({ ...f, festival: 'newyear' }).px)).toBeGreaterThan(lit(petPixels(f).px))
+})
+
+test('E8-S03: the band celebrates on the day; /pet festivals off turns it off', async ($, on) => {
+  const { store } = timed(on, {}, Date.parse('2026-12-24T10:00:00'))
+  const ran = await $.command.run(run('pet', 'festivals'))
+  expect(ran.text).toContain('Today: CHRISTMAS!')
+  expect(ran.text).toContain('Coming up: Christmas 2026-12-25 · New Year 2027-01-01 · Tết 2027-02-06')
+  expect((await $.command.run(run('pet', 'stats'))).text).toContain('Now: DECORATES THE TREE · MERRY CHRISTMAS!')
+  await $.command.run(run('pet', 'festivals off'))
+  expect(store.festivals).toBe(false)
+  expect((await $.command.run(run('pet', 'stats'))).text).not.toContain('CHRISTMAS')
+})
+
+// ── E8-S04: the birthday ────────────────────────────────────────────────────
+test('E8-S04: a birthday is the adoption day in a later year; 29 February falls on the 28th', () => {
+  expect(birthdayAge('2025-10-09', '2026-10-09')).toBe(1)
+  expect(birthdayAge('2026-10-09', '2026-10-09')).toBe(0)
+  expect(birthdayAge('2024-02-29', '2025-02-28')).toBe(1)
+  expect(birthdayAge('2024-02-29', '2028-02-29')).toBe(4)
+  expect(nextBirthday('2026-10-09', '2026-10-09')).toBe('2027-10-09')
+})
+
+const PROFILE_SINCE = (since: string) => ({ since, totals: { xp: 0, coins: 0, bugs: 0, helpers: 0, green: 0, turns: 0, balls: 0 }, byKind: {}, streak: { days: 0, best: 0, last: '' }, badges: [] })
+
+test('E8-S04: on its birthday the pet wears a party hat and gets a one-off gift', async ($, on) => {
+  const { store, toasts } = timed(on, { profile: PROFILE_SINCE('2025-10-09') })
+  const ran = await $.command.run(run('pet', 'birthday'))
+  expect(ran.text).toContain("It's Pixel's birthday: 1 today!")
+  expect(store.adoptedOn).toBe('2025-10-09')
+  expect(store.petXp).toBe(BIRTHDAY_XP)
+  expect(toasts).toContain(`▶ HAPPY BIRTHDAY, PIXEL! 1 YEAR TOGETHER TODAY · +${BIRTHDAY_XP} XP`)
+  await $.command.run(run('pet', 'birthday'))
+  expect(store.petXp).toBe(BIRTHDAY_XP)
+  expect((await $.command.run(run('pet', 'buy party'))).text).toContain("comes out by itself on your pet's birthday")
+  expect(lit(petPixels({ ...FRAME, columns: 40, hd: true, stage: 'baby', items: ['party'] }).px, 0xff5ca8)).toBeGreaterThan(3)
+})
+
+test('E8-S04: a new pet is adopted today; /pet birthday says when the party is', async ($, on) => {
+  const { store } = timed(on)
+  expect((await $.command.run(run('pet', 'birthday'))).text).toContain('Next birthday: 2027-10-09, in 365 days, turning 1')
+  expect(store.adoptedOn).toBe('2026-10-09')
+  expect(store.petXp).toBeUndefined()
+})
+
+// ── E8-S05: chatter ─────────────────────────────────────────────────────────
+test('E8-S05: the summary for chatter holds counts only', () => {
+  expect(toolKind('Edit')).toBe('edits')
+  expect(toolKind('Bash')).toBe('commands')
+  expect(toolKind('mcp__github__create_issue')).toBe('connector calls')
+  const s = turnSummary({ counts: { edits: 3, commands: 2 }, failed: 1, tests: { passed: 12, failed: 0 } }, 125_000, 'happy', Date.parse('2026-10-09T15:00:00'), false)
+  expect(s).toBe("A turn of 2 minutes in the afternoon. Steps: 3 edits, 2 commands (1 failed). Tests: 12 passed, 0 failed. The pet's mood: happy.")
+})
+
+test('E8-S05: chatter is off by default; on, a small model writes a line at most every 20 minutes, from the summary only', async ($, on) => {
+  const { store, clock } = timed(on)
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  const sent: { model: string; prompt: string; system?: string }[] = []
+  on('model.complete', (_$, e) => {
+    sent.push(e as never)
+    return { value: { isAnswered: true, text: '"Nice, all done!"', usage: { input_tokens: 90, output_tokens: 8, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } } as never
+  })
+  const SECRET = 'the answer mentions C:/secret/keys.txt and sk-123'
+  await turnDone($, SECRET)
+  await clock.advance(100)
+  expect(sent).toHaveLength(0)
+
+  expect((await $.command.run(run('pet', 'chatter on'))).text).toContain('Never your files, paths, commands, prompts or answers')
+  expect(store.chatter).toBe(true)
+  await turnDone($, SECRET, 30_000)
+  await clock.advance(100)
+  expect(sent).toHaveLength(1)
+  expect(sent[0]!.model).toBe('haiku')
+  expect(sent[0]!.prompt).toContain('What just happened: A turn of 30 seconds')
+  expect(`${sent[0]!.prompt} ${sent[0]!.system}`).not.toMatch(/secret|sk-123|keys/)
+  expect((await $.command.run(run('pet', 'stats'))).text).toContain('Now: SAYS: Nice, all done!')
+
+  await clock.advance(5 * 60_000)
+  await turnDone($)
+  await clock.advance(100)
+  expect(sent).toHaveLength(1)
+  await clock.advance(CHATTER_EVERY_MS)
+  await turnDone($)
+  await clock.advance(100)
+  expect(sent).toHaveLength(2)
+  await $.command.run(run('pet', 'chatter off'))
+  await clock.advance(CHATTER_EVERY_MS)
+  await turnDone($)
+  await clock.advance(100)
+  expect(sent).toHaveLength(2)
 })

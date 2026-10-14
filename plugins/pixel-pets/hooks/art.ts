@@ -160,9 +160,10 @@ export const nextStage = (level: number) => STAGES.find(x => x.at > level) ?? nu
 // forward being the way the pet faces. One item per slot.
 export type ItemId = 'bow' | 'scarf' | 'shades' | 'hat' | 'lantern' | 'crown'
   | 'flower' | 'headphones' | 'bandana' | 'cape' | 'wizard' | 'halo' | 'rainbow'
+  | 'party'
 type Slot = 'head' | 'face' | 'neck' | 'hand' | 'back'
-/** Shop items have a price; box-only items (E9) have none and a rarity instead. */
-export const ITEMS: Record<ItemId, { name: string; price: number; slot: Slot; px: [number, number, number][]; rarity?: Rarity }> = {
+/** Shop items have a price; box-only items (E9) have none and a rarity instead; the party hat is for birthdays (E8-S04). */
+export const ITEMS: Record<ItemId, { name: string; price: number; slot: Slot; px: [number, number, number][]; rarity?: Rarity; isEvent?: boolean }> = {
   bow: { name: 'Pink bow', price: 15, slot: 'head', px: [[-2, -1, 0xff7eb6], [-3, -1, 0xff7eb6]] },
   scarf: { name: 'Red scarf', price: 25, slot: 'neck', px: [[-1, 1, 0xe53935], [-2, 1, 0xe53935], [-3, 2, 0xb71c1c]] },
   shades: { name: 'Sunglasses', price: 40, slot: 'face', px: [[0, 0, 0x33ccff], [-1, 0, 0x111111], [1, 0, 0x111111]] },
@@ -176,6 +177,7 @@ export const ITEMS: Record<ItemId, { name: string; price: number; slot: Slot; px
   wizard: { name: 'Wizard hat', price: 0, rarity: 'rare', slot: 'head', px: [[1, -1, 0x5e35b1], [0, -1, 0x5e35b1], [-1, -1, 0x5e35b1], [0, -2, 0xffd23f]] },
   rainbow: { name: 'Rainbow scarf', price: 0, rarity: 'rare', slot: 'neck', px: [[-1, 1, 0xef5350], [-2, 1, 0xffee58], [-3, 1, 0x42a5f5]] },
   halo: { name: 'Halo', price: 0, rarity: 'epic', slot: 'head', px: [[1, -2, 0xffe57f], [0, -2, 0xffe57f], [-1, -2, 0xffe57f]] },
+  party: { name: 'Party hat', price: 0, isEvent: true, slot: 'head', px: [[1, -1, 0xff5ca8], [0, -1, 0x42a5f5], [-1, -1, 0xff5ca8], [0, -2, 0xffd23f]] },
 }
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[]
 export const isItemId = (x: unknown): x is ItemId => typeof x === 'string' && Object.hasOwn(ITEMS, x)
@@ -610,6 +612,7 @@ export const ITEM_ART: Record<string, ItemArt> = {
   cape: { at: 'back', rows: ['rrr', 'rrrr', '.rrrr', '..rrr'], colors: { r: 0xc62828 }, ax: 0, ay: 0 },
   wizard: { at: 'head', rows: ['..p..', '.pyp.', '.ppp.', 'ppppp'], colors: { p: 0x5e35b1, y: 0xffd23f }, ax: 2, ay: 3 },
   halo: { at: 'head', rows: ['yyyy', '....'], colors: { y: 0xffe57f }, ax: 1, ay: 1 },
+  party: { at: 'head', rows: ['..y..', '..p..', '.pbp.', 'pbpbp'], colors: { p: 0xff5ca8, b: 0x42a5f5, y: 0xffd23f }, ax: 2, ay: 3 },
   rainbow: { at: 'neck', rows: ['roygbp'], colors: { r: 0xef5350, o: 0xffa726, y: 0xffee58, g: 0x66bb6a, b: 0x42a5f5, p: 0xab47bc }, ax: 3, ay: 0 },
 }
 
