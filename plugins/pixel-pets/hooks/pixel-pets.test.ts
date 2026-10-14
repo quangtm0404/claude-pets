@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import {
-  BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, festivalOn, focusLabel, focusXp,
-  midAutumnOf, nextBirthday, parseBreaks, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary,
+  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, festivalOn, focusLabel, focusXp,
+  midAutumnOf, nextBirthday, noteTestRun, parseBreaks, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary,
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
 import { press, step } from './runner'
@@ -655,7 +655,7 @@ test('E3-S01/S02/S03: turns build the profile, the board ranks the pet, and the 
   expect(board.text).toMatch(/1\. ★ 🐈 Pixel the cat\s+LV1\s+6 XP {2}← now/)
   expect(board.text).toContain('Lifetime: 6 XP · 0 coins · 0 bugs squashed · 0 helpers home · 0 green test runs · 3 turns')
   expect(board.text).toContain('Streak: 1 day (best 1)')
-  expect(board.text).toContain('Achievements 0/8: none yet')
+  expect(board.text).toContain('Achievements 0/12: none yet')
 })
 
 test('E3-S03: five green test runs unlock GREEN STREAK, once', async ($, on) => {
@@ -666,7 +666,7 @@ test('E3-S03: five green test runs unlock GREEN STREAK, once', async ($, on) => 
   expect(toasts.filter(t => t === '▶ ACHIEVEMENT: GREEN STREAK').length).toBe(1)
   const board = await $.command.run(run('pet', 'board'))
   expect(board.text).toContain('6 green test runs')
-  expect(board.text).toContain('Achievements 1/8: GREEN STREAK')
+  expect(board.text).toContain('Achievements 1/12: GREEN STREAK')
 })
 
 test('E3-S02: each animal keeps its own XP on the board', async ($, on) => {
@@ -1459,4 +1459,99 @@ test('E8-S05: chatter is off by default; on, a small model writes a line at most
   await turnDone($)
   await clock.advance(100)
   expect(sent).toHaveLength(2)
+})
+
+// ── E13-S01: achievements for real work ────────────────────────────────────
+test('E13-S01: green runs count in a row; a red run starts over, and the next green is a fix', () => {
+  const w = { greenRun: 0, bestGreenRun: 0, fixes: 0, wasRed: false, commits: 0, focus: 0 }
+  for (let i = 0; i < 3; i++) noteTestRun(w, 0)
+  noteTestRun(w, 2)
+  expect(w).toMatchObject({ greenRun: 0, bestGreenRun: 3, fixes: 0, wasRed: true })
+  noteTestRun(w, 1)
+  noteTestRun(w, 0)
+  noteTestRun(w, 0)
+  expect(w).toMatchObject({ greenRun: 2, bestGreenRun: 3, fixes: 1, wasRed: false })
+  expect(ACHIEVEMENTS.map(a => a.id)).toEqual(expect.arrayContaining(['clean-sheet', 'comeback', 'shipper', 'deep-focus']))
+})
+
+test('E13-S01: test runs and commits unlock CLEAN SHEET, COMEBACK and SHIPPER, each once, with a box', async ($, on) => {
+  const toasts: string[] = []
+  const store = repo(on, {}, {}, toasts)
+  on('tool.call', (_$, e) => {
+    const cmd = String((e as { command?: string }).command)
+    if (cmd.includes('--red')) return { result: {}, text: '  2 failed\n  10 passed (3s)' } as never
+    if (cmd === 'git commit -m empty') return { result: {}, text: 'nothing to commit, working tree clean' } as never
+    if (cmd.startsWith('git commit')) return { result: {}, text: '[main 1a2b3c4] fix the thing\n 1 file changed' } as never
+    return { result: {}, text: '  12 passed (3s)' } as never
+  })
+  const bash = (command: string) => $.tool.call({ tool: 'Bash', command } as never)
+  for (let i = 0; i < 10; i++) await bash('npx playwright test')
+  expect(toasts.filter(t => t === '▶ ACHIEVEMENT: CLEAN SHEET')).toHaveLength(1)
+  for (let i = 0; i < 5; i++) {
+    await bash('npx playwright test --red')
+    await bash('npx playwright test')
+  }
+  expect(toasts.filter(t => t === '▶ ACHIEVEMENT: COMEBACK')).toHaveLength(1)
+  for (let i = 0; i < 12; i++) await bash('git commit -m "x"')
+  await bash('git commit -m empty')
+  await bash('git status')
+  expect(toasts.filter(t => t === '▶ ACHIEVEMENT: SHIPPER')).toHaveLength(1)
+  const p = store.profile as { work: Record<string, number>; badges: string[] }
+  expect(p.work).toMatchObject({ commits: 12, fixes: 5, bestGreenRun: 10 })
+  expect(p.badges).toEqual(expect.arrayContaining(['clean-sheet', 'comeback', 'shipper']))
+  const board = await $.command.run(run('pet', 'board'))
+  expect(board.text).toContain('Work: 12 commits · best 10 green runs in a row · 5 red runs turned green · 0 focus rounds')
+  expect(toasts.some(t => t.startsWith('▶ +1 BLIND BOX FOR AN ACHIEVEMENT'))).toBe(true)
+})
+
+// ── E13-S02/S03: keepsakes and more festivals ──────────────────────────────
+test('E13-S03: Valentine\'s Day and Halloween come round each year; days of your own too', () => {
+  expect(festivalOn('2027-02-14')?.id).toBe('valentine')
+  expect(festivalOn('2026-10-29')?.id).toBe('halloween')
+  expect(festivalOn('2026-10-31')?.line).toBe('CARVES PUMPKINS · TRICK OR TREAT!')
+  expect(festivalOn('2026-10-28')).toBeNull()
+  const mine = [{ date: '11-20', title: "Teachers' Day" }]
+  expect(festivalOn('2026-11-20', mine)).toEqual({ id: 'custom', title: "TEACHERS' DAY", line: "CELEBRATES TEACHERS' DAY!" })
+  expect(festivalOn('2026-11-20')).toBeNull()
+  expect(parseMyFestival("11-20 Teachers' Day")).toEqual({ date: '11-20', title: "Teachers' Day" })
+  expect(parseMyFestival('2026-3-8 Women\'s Day')).toEqual({ date: '03-08', title: "Women's Day" })
+  expect(parseMyFestival('02-30 Nope')).toBeNull()
+  expect(parseMyFestival('soon party')).toBeNull()
+  expect(upcomingFestivals('2026-10-14', mine)).toEqual([['Halloween', '2026-10-31'], ["Teachers' Day", '2026-11-20'], ['Christmas', '2026-12-25'], ['New Year', '2027-01-01']])
+})
+
+test('E13-S03: the new festivals draw hearts, pumpkins and confetti', () => {
+  const f = { ...FRAME, columns: 60, tick: 12 }
+  expect(lit(petPixels({ ...f, festival: 'valentine' }).px, 0xe53935) + lit(petPixels({ ...f, festival: 'valentine' }).px, 0xff4f81)).toBeGreaterThan(3)
+  expect(lit(petPixels({ ...f, festival: 'halloween' }).px, 0xfb8c00)).toBeGreaterThan(3)
+  expect(lit(petPixels({ ...f, festival: 'halloween' }).px, 0x9575cd)).toBe(3)
+  expect(lit(petPixels({ ...f, festival: 'custom' }).px)).toBeGreaterThan(lit(petPixels(f).px) + 3)
+})
+
+test('E13-S02/S03: a festival gives its keepsake once; /pet festivals adds and removes days of your own', async ($, on) => {
+  const { store, toasts, clock } = timed(on, {}, Date.parse('2026-10-30T10:00:00'))
+  const ran = await $.command.run(run('pet', 'festivals'))
+  expect(ran.text).toContain('Today: HALLOWEEN!')
+  expect(ran.text).toContain('Keepsakes 1/6')
+  expect(toasts).toContain('▶ A HALLOWEEN KEEPSAKE: PUMPKIN HAT · /pet wear pumpkin')
+  await $.command.run(run('pet', 'festivals'))
+  expect(toasts.filter(t => t.includes('KEEPSAKE'))).toHaveLength(1)
+  expect((await $.command.run(run('pet', 'wear pumpkin'))).text).toBe('Wearing the pumpkin hat.')
+  expect((await $.command.run(run('pet', 'buy santa'))).text).toBe('The santa hat is a christmas keepsake: it comes once, during 20 to 26 December. /pet festivals')
+  expect((await $.command.run(run('pet', 'wear santa'))).text).toContain('christmas keepsake')
+  expect((await $.command.run(run('pet', 'collection'))).text).toContain('Keepsakes    🔒 lixi  🔒 starlantern  🔒 santa  🔒 sparkler  🔒 hearts  ✓ pumpkin* (one at each festival)')
+
+  expect((await $.command.run(run('pet', "festivals add 10-31 Ana's birthday"))).text).toBe("Added Ana's birthday on 10-31 every year: confetti in the band that day.")
+  expect((await $.command.run(run('pet', 'festivals add someday'))).text).toContain('Give a date and a name')
+  await $.command.run(run('pet', "festivals add 11-20 Teachers' Day"))
+  expect(store.myFestivals).toEqual([{ date: '10-31', title: "Ana's birthday" }, { date: '11-20', title: "Teachers' Day" }])
+  const list = await $.command.run(run('pet', 'festivals'))
+  expect(list.text).toContain("Your own days: Ana's birthday (10-31) · Teachers' Day (11-20)")
+  expect(list.text).toContain("Coming up: Halloween 2026-10-31 · Ana's birthday 2026-10-31")
+  // a built-in festival on the same day comes first
+  await clock.advance(86_400_000)
+  expect((await $.command.run(run('pet', 'festivals'))).text).toContain('Today: HALLOWEEN!')
+  expect((await $.command.run(run('pet', "festivals remove teachers' day"))).text).toBe("Removed Teachers' Day.")
+  expect((await $.command.run(run('pet', 'festivals remove nope'))).text).toContain('No day of your own called "nope"')
+  expect(store.myFestivals).toEqual([{ date: '10-31', title: "Ana's birthday" }])
 })

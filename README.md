@@ -1,5 +1,7 @@
 # Claude Pets
 
+[![CI](https://github.com/quangtm0404/claude-pets/actions/workflows/ci.yml/badge.svg)](https://github.com/quangtm0404/claude-pets/actions/workflows/ci.yml)
+
 A pixel pet game and retro dashboard for [Claude Code](https://claude.com/claude-code): an ice-cyan band above the prompt with your plan usage, the backlog story you're on, your branch, and a tiny pixel pet game that plays itself while Claude works.
 
 ```
@@ -13,6 +15,8 @@ A pixel pet game and retro dashboard for [Claude Code](https://claude.com/claude
           ▪       ▀█▀█▀█          ▄▄   ▪
  ▔▔ ♥♥♡♡♡ LV3 XP 042 ◆7 · PIXEL IS GRUMPY · 5H 82% ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 ```
+
+<p><img src="docs/img/demo.gif" alt="The pet strip through the year: a cat hunting a bug, then carving pumpkins at Halloween, by the tree at Christmas, under New Year fireworks and among Tết lanterns, wearing each festival's keepsake" width="640"></p>
 
 Players on the world board get a live badge for their GitHub profile (`/pet card`), drawn with the pet's stage, what it wears and their theme:
 
@@ -106,6 +110,8 @@ The pet's strip shows the same sky: the sun by day, the moon and stars at night,
 
 `FIRST COIN · BUG SQUASHER · PACK LEADER · GREEN STREAK · A WEEK'S STREAK · LEVEL 5 · LEVEL 10 · ZOO KEEPER`
 
+and four for real work, counted from the commands Claude runs for you: **CLEAN SHEET** (10 green test runs in a row), **COMEBACK** (turn failing tests green 5 times), **SHIPPER** (10 commits) and **DEEP FOCUS** (10 focus rounds). `/pet board` shows the counts under your totals.
+
 Your name comes from the `playerName` setting, else git's `user.name`, else your OS user.
 
 ### The world board (opt-in)
@@ -120,7 +126,9 @@ The board runs at `https://claude-pets-board.claude-pets-leaderboard.workers.dev
 
 ### Through the day and the year
 - **Break reminders**: after an hour of continuous work (a pause of 10 minutes counts as a break), your pet stretches when the turn ends and suggests you stand up and drink some water. At most once an hour, never in the middle of a turn, and not while a focus timer runs. **`/pet breaks 45`** changes the time, **`/pet breaks off`** stops them.
-- **Festivals**: red lanterns at Tết, a full moon and mooncakes at Mid-Autumn, a tree in the snow at Christmas, fireworks at New Year. Tết and Mid-Autumn follow the lunar calendar, worked out for each year. **`/pet festivals`** lists the next ones; **`/pet festivals off`** turns them off.
+- **Festivals**: red lanterns at Tết, a full moon and mooncakes at Mid-Autumn, a tree in the snow at Christmas, fireworks at New Year, hearts on Valentine's Day, pumpkins and a bat at Halloween. Tết and Mid-Autumn follow the lunar calendar, worked out for each year. **`/pet festivals`** lists the next ones; **`/pet festivals off`** turns them off.
+- **Keepsakes**: the first time you see each festival your pet gets something to keep, which you can't buy or find in a box: a lucky envelope (Tết), a star lantern (Mid-Autumn), a Santa hat, a sparkler (New Year), heart glasses (Valentine's) and a pumpkin hat (Halloween). `/pet collection` shows which you have.
+- **Days of your own**: **`/pet festivals add 11-20 Teachers' Day`** puts confetti in the band on that day every year (up to 12 days); **`/pet festivals remove teachers' day`** drops it.
 - **A birthday**: your pet's adoption day comes round each year with a party hat, the band telling how old it is, and a one-off +50 XP. **`/pet birthday`** says when.
 - **Chatter** (off by default): **`/pet chatter on`** and, after a turn, at most once every 20 minutes, your pet says a line in the band. A small model (Haiku) writes it from a summary made on your machine: how long the turn took and how many edits, commands and tests ran. Never your files, paths, commands, prompts or answers, and the line never goes into the conversation.
 
@@ -247,9 +255,26 @@ Everything stays local: the backlog files, git and the transcript are read on yo
 ## Development
 ```sh
 claude plugin validate plugins/pixel-pets
-claude plugin test plugins/pixel-pets
+claude plugin test plugins/pixel-pets              # also writes the types the type-check needs
+npx -y -p typescript tsc -p plugins/pixel-pets
+(cd server && npm test)                            # the board service, Node 22.18+
 pip install numpy scipy && python plugins/pixel-pets/tools/make_sounds.py   # regenerate the voices
 ```
+
+CI runs all of these but the sounds on every push and pull request ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)); none of it needs a login.
+
+The mod's code, in `plugins/pixel-pets/hooks/`:
+
+| File | What's in it |
+|---|---|
+| `register.tsx` | The hooks, the band, the commands and the pet's life: XP, the wallet, boxes, focus, breaks, chatter, the board |
+| `scene.ts` | The pet's strip: the animals, the frame in pixels (terminal) and as SVG (desktop, VS Code), the festivals' decorations |
+| `art.ts` | Sprites, items, skins and the cartoon tracer, shared with the board service |
+| `seasons.ts` | The lunar calendar, festivals, days of your own and birthdays |
+| `profile.ts` | Lifetime totals, the streak, real work and the achievements |
+| `theme.ts` | Themes, your own colours and the banner's fonts |
+| `weather.ts` | Weather kinds, labels and the weather row |
+| `runner.tsx` | The runner game, drawn by the surface itself |
 
 ## License
 MIT

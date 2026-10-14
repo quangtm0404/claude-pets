@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.0 — 2026-10-14
+
+Built to last, and more to celebrate ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E11, E12-S01, E13).
+
+- **Achievements for real work** (E13-S01): CLEAN SHEET (10 green test runs in a row), COMEBACK (failing tests turned green 5 times), SHIPPER (10 commits), DEEP FOCUS (10 focus rounds). `/pet board` shows the counts.
+- **Festival keepsakes** (E13-S02): the first time you see each festival your pet gets something to keep: a lucky envelope, a star lantern, a Santa hat, a sparkler, heart glasses or a pumpkin hat. Not for sale, not in boxes.
+- **More festivals, and days of your own** (E13-S03): Valentine's Day and Halloween; `/pet festivals add 11-20 Teachers' Day` puts confetti in the band that day every year.
+- **CI** (E11-S01): every push is validated, tested and type-checked, and the board service's tests run.
+- **The mod in modules** (E11-S02): themes, weather, the pet's scene and the profile have their own files. No change in behaviour.
+- **A demo in the README** (E12-S01), drawn by the mod itself.
+- The board service shows keepsakes on badges once it is redeployed; until then a badge keeps the last look it had.
+
 ## 1.8.0 — 2026-10-14
 
 Life and seasons, the rest of it ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E8-S02 to S05), and a checklist for your finds.

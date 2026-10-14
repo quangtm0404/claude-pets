@@ -1,0 +1,42 @@
+# Every push and pull request: the mod is validated, tested and type-checked,
+# and the board service's tests run. Nothing here needs a login or a secret.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mod:
+    name: Mod (validate, test, type-check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Validate
+        run: claude plugin validate plugins/pixel-pets
+      - name: Test
+        # also writes .claude-plugin/types and tsconfig.json, which the type-check extends
+        run: claude plugin test plugins/pixel-pets
+      - name: Type-check
+        run: npx -y -p typescript tsc -p plugins/pixel-pets
+
+  server:
+    name: Board service (tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test
+        working-directory: server
+        run: npm test

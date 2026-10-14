@@ -2,6 +2,7 @@
 // plugin and the board service (server/), which draws the same pet on badges.
 // Pure data and functions: no engine, no DOM.
 import type { PetKind } from '../types'
+import type { FestivalId } from './seasons'
 
 export const SPRITE_W = 7
 export const SPRITE_ROWS = 4
@@ -161,9 +162,13 @@ export const nextStage = (level: number) => STAGES.find(x => x.at > level) ?? nu
 export type ItemId = 'bow' | 'scarf' | 'shades' | 'hat' | 'lantern' | 'crown'
   | 'flower' | 'headphones' | 'bandana' | 'cape' | 'wizard' | 'halo' | 'rainbow'
   | 'party'
+  | 'lixi' | 'starlantern' | 'santa' | 'sparkler' | 'hearts' | 'pumpkin'
 type Slot = 'head' | 'face' | 'neck' | 'hand' | 'back'
-/** Shop items have a price; box-only items (E9) have none and a rarity instead; the party hat is for birthdays (E8-S04). */
-export const ITEMS: Record<ItemId, { name: string; price: number; slot: Slot; px: [number, number, number][]; rarity?: Rarity; isEvent?: boolean }> = {
+/**
+ * Shop items have a price; box-only items (E9) have none and a rarity instead; the party
+ * hat is for birthdays (E8-S04); keepsakes come once, at their festival (E13-S02).
+ */
+export const ITEMS: Record<ItemId, { name: string; price: number; slot: Slot; px: [number, number, number][]; rarity?: Rarity; isEvent?: boolean; festival?: FestivalId }> = {
   bow: { name: 'Pink bow', price: 15, slot: 'head', px: [[-2, -1, 0xff7eb6], [-3, -1, 0xff7eb6]] },
   scarf: { name: 'Red scarf', price: 25, slot: 'neck', px: [[-1, 1, 0xe53935], [-2, 1, 0xe53935], [-3, 2, 0xb71c1c]] },
   shades: { name: 'Sunglasses', price: 40, slot: 'face', px: [[0, 0, 0x33ccff], [-1, 0, 0x111111], [1, 0, 0x111111]] },
@@ -178,6 +183,12 @@ export const ITEMS: Record<ItemId, { name: string; price: number; slot: Slot; px
   rainbow: { name: 'Rainbow scarf', price: 0, rarity: 'rare', slot: 'neck', px: [[-1, 1, 0xef5350], [-2, 1, 0xffee58], [-3, 1, 0x42a5f5]] },
   halo: { name: 'Halo', price: 0, rarity: 'epic', slot: 'head', px: [[1, -2, 0xffe57f], [0, -2, 0xffe57f], [-1, -2, 0xffe57f]] },
   party: { name: 'Party hat', price: 0, isEvent: true, slot: 'head', px: [[1, -1, 0xff5ca8], [0, -1, 0x42a5f5], [-1, -1, 0xff5ca8], [0, -2, 0xffd23f]] },
+  lixi: { name: 'Lucky envelope', price: 0, festival: 'tet', slot: 'hand', px: [[1, 1, 0xe53935], [1, 2, 0xffd23f]] },
+  starlantern: { name: 'Star lantern', price: 0, festival: 'midautumn', slot: 'hand', px: [[1, 1, 0xffd23f], [1, 2, 0xe53935]] },
+  santa: { name: 'Santa hat', price: 0, festival: 'christmas', slot: 'head', px: [[1, -1, 0xffffff], [0, -1, 0xd32f2f], [-1, -1, 0xd32f2f], [-1, -2, 0xffffff]] },
+  sparkler: { name: 'Sparkler', price: 0, festival: 'newyear', slot: 'hand', px: [[1, 1, 0x9e9e9e], [1, 0, 0xffd23f]] },
+  hearts: { name: 'Heart glasses', price: 0, festival: 'valentine', slot: 'face', px: [[0, 0, 0xff4f81], [-1, 0, 0x111111], [1, 0, 0xff4f81]] },
+  pumpkin: { name: 'Pumpkin hat', price: 0, festival: 'halloween', slot: 'head', px: [[1, -1, 0xfb8c00], [0, -1, 0xfb8c00], [-1, -1, 0xfb8c00], [0, -2, 0x43a047]] },
 }
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[]
 export const isItemId = (x: unknown): x is ItemId => typeof x === 'string' && Object.hasOwn(ITEMS, x)
@@ -613,6 +624,13 @@ export const ITEM_ART: Record<string, ItemArt> = {
   wizard: { at: 'head', rows: ['..p..', '.pyp.', '.ppp.', 'ppppp'], colors: { p: 0x5e35b1, y: 0xffd23f }, ax: 2, ay: 3 },
   halo: { at: 'head', rows: ['yyyy', '....'], colors: { y: 0xffe57f }, ax: 1, ay: 1 },
   party: { at: 'head', rows: ['..y..', '..p..', '.pbp.', 'pbpbp'], colors: { p: 0xff5ca8, b: 0x42a5f5, y: 0xffd23f }, ax: 2, ay: 3 },
+  // festival keepsakes (E13-S02)
+  lixi: { at: 'hand', rows: ['rr', 'yy', 'rr'], colors: { r: 0xe53935, y: 0xffd23f }, ax: 1, ay: 0 },
+  starlantern: { at: 'hand', rows: ['.y.', 'yry', '.y.', '.k.'], colors: { y: 0xffd23f, r: 0xe53935, k: 0x8d6e63 }, ax: 1, ay: 0 },
+  santa: { at: 'head', rows: ['....w', '..rr.', '.rrr.', 'wwwww'], colors: { r: 0xd32f2f, w: 0xffffff }, ax: 2, ay: 3 },
+  sparkler: { at: 'hand', rows: ['y.y', '.w.', '.k.', '.k.'], colors: { y: 0xffd23f, w: 0xfff6a0, k: 0x9e9e9e }, ax: 1, ay: 0 },
+  hearts: { at: 'face', rows: ['pp.pp', 'pkkpp'], colors: { p: 0xff4f81, k: 0x111111 }, ax: 1, ay: 0 },
+  pumpkin: { at: 'head', rows: ['..g..', '.ooo.', 'ooooo'], colors: { o: 0xfb8c00, g: 0x43a047 }, ax: 2, ay: 2 },
   rainbow: { at: 'neck', rows: ['roygbp'], colors: { r: 0xef5350, o: 0xffa726, y: 0xffee58, g: 0x66bb6a, b: 0x42a5f5, p: 0xab47bc }, ax: 3, ay: 0 },
 }
 

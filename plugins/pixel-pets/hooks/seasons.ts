@@ -93,37 +93,57 @@ export const tetOf = (year: number) => iso(lunarToJd(1, 1, year))
 /** Mid-Autumn (the 15th of the 8th lunar month) of a year, YYYY-MM-DD. */
 export const midAutumnOf = (year: number) => iso(lunarToJd(15, 8, year))
 
-export type FestivalId = 'tet' | 'midautumn' | 'christmas' | 'newyear'
+export type FestivalId = 'tet' | 'midautumn' | 'christmas' | 'newyear' | 'valentine' | 'halloween' | 'custom'
 export type Festival = { id: FestivalId; title: string; line: string }
+/** A day of your own, every year (E13-S03): MM-DD and what it is called. */
+export type MyFestival = { date: string; title: string }
 
 /** What each festival is called, and what the pet does for it. */
-export const FESTIVALS: Record<FestivalId, { title: string; line: (year: number) => string; when: string }> = {
+export const FESTIVALS: Record<Exclude<FestivalId, 'custom'>, { title: string; line: (year: number) => string; when: string }> = {
   tet: { title: 'TẾT', line: () => 'HANGS LANTERNS · CHÚC MỪNG NĂM MỚI!', when: 'three days either side of the lunar new year' },
   midautumn: { title: 'MID-AUTUMN', line: () => 'SHARES A MOONCAKE · TẾT TRUNG THU', when: 'the three days up to the full moon of the 8th lunar month' },
   christmas: { title: 'CHRISTMAS', line: () => 'DECORATES THE TREE · MERRY CHRISTMAS!', when: '20 to 26 December' },
   newyear: { title: 'NEW YEAR', line: y => `WATCHES THE FIREWORKS · HAPPY NEW YEAR ${y}!`, when: '31 December and 1 January' },
+  valentine: { title: "VALENTINE'S DAY", line: () => "BLOWS HEARTS · HAPPY VALENTINE'S DAY!", when: '14 February' },
+  halloween: { title: 'HALLOWEEN', line: () => 'CARVES PUMPKINS · TRICK OR TREAT!', when: '29 to 31 October' },
 }
 
-/** The festival on a local calendar date (YYYY-MM-DD), or null. */
-export function festivalOn(day: string): Festival | null {
+/** `MM-DD title` or `YYYY-MM-DD title` as a day of your own, or null. */
+export function parseMyFestival(arg: string): MyFestival | null {
+  const m = /^(?:\d{4}-)?(\d{1,2})-(\d{1,2})\s+(.+)$/.exec(arg.trim())
+  if (!m) return null
+  const month = Number(m[1]), day = Number(m[2])
+  const days = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+  if (!days || day < 1 || day > days) return null
+  const title = m[3]!.replace(/\s+/g, ' ').trim().slice(0, 30)
+  return { date: `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, title }
+}
+
+/** The festival on a local calendar date (YYYY-MM-DD), or null; days of your own come after the rest. */
+export function festivalOn(day: string, mine: MyFestival[] = []): Festival | null {
   const [y, m, d] = day.split('-').map(Number) as [number, number, number]
   const jd = jdFromDate(d, m, y)
-  const pick = (id: FestivalId, year = y): Festival => ({ id, title: FESTIVALS[id].title, line: FESTIVALS[id].line(year) })
+  const pick = (id: Exclude<FestivalId, 'custom'>, year = y): Festival => ({ id, title: FESTIVALS[id].title, line: FESTIVALS[id].line(year) })
   if ((m === 12 && d === 31) || (m === 1 && d === 1)) return pick('newyear', m === 12 ? y + 1 : y)
   if (m === 12 && d >= 20 && d <= 26) return pick('christmas')
   const tet = lunarToJd(1, 1, y)
   if (jd >= tet - 3 && jd <= tet + 3) return pick('tet')
   const moon = lunarToJd(15, 8, y)
   if (jd >= moon - 2 && jd <= moon) return pick('midautumn')
-  return null
+  if (m === 2 && d === 14) return pick('valentine')
+  if (m === 10 && d >= 29) return pick('halloween')
+  const own = mine.find(f => f.date === day.slice(5))
+  return own ? { id: 'custom', title: own.title.toUpperCase(), line: `CELEBRATES ${own.title.toUpperCase()}!` } : null
 }
 
 /** The festivals still to come from a date, soonest first: [title, YYYY-MM-DD]. */
-export function upcomingFestivals(day: string): [string, string][] {
+export function upcomingFestivals(day: string, mine: MyFestival[] = []): [string, string][] {
   const y = Number(day.slice(0, 4))
   const all: [string, string][] = []
   for (const year of [y, y + 1]) {
     all.push(['Tết', tetOf(year)], ['Mid-Autumn', midAutumnOf(year)], ['Christmas', `${year}-12-25`], ['New Year', `${year + 1}-01-01`])
+    all.push(["Valentine's Day", `${year}-02-14`], ['Halloween', `${year}-10-31`])
+    for (const f of mine) all.push([f.title, `${year}-${f.date}`])
   }
   return all.filter(([, d]) => d >= day).sort((a, b) => a[1].localeCompare(b[1])).slice(0, 4)
 }

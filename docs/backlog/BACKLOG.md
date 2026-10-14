@@ -650,3 +650,128 @@ So that it looks its best in the desktop app, VS Code and on my badge.
 | Shape, eyes, skins and items asserted | testing | ✅ Done |
 
 </details>
+
+## P6 · Built to last, and more to celebrate - 🟡 In progress
+
+### E11 · Built to last - ✅ Done
+
+**Outcome.** A change that breaks something is caught before it ships, and the code is easy to find your way around.
+
+<details><summary><b>E11-S01</b> - as a <b>maintainer</b>, I want <b>every push checked automatically</b> · ✅ Done · 2 pts</summary>
+
+So that a broken test or type never reaches a release.
+
+**Acceptance criteria**
+- On every push to main and every pull request: the mod is validated, tested and type-checked, and the board service's tests run
+- Nothing in CI needs a login or a secret
+- The README shows the CI status
+
+| Task | Kind | Status |
+|---|---|---|
+| GitHub Actions workflow | technical | ✅ Done |
+| Checked from a fresh config with no login | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E11-S02</b> - as a <b>maintainer</b>, I want <b>the mod split into modules by area</b> · ✅ Done · 3 pts</summary>
+
+So that each feature has a place, and the next one is cheaper to add.
+
+**Acceptance criteria**
+- Themes and fonts, weather, the pet's scene, and the profile with its achievements each live in their own module; `register.tsx` keeps the hooks and the pet's life
+- Everything `register.tsx` exported before still is, so tests and the board service are unchanged
+- No unused code left behind; the type-check passes with unused locals reported
+
+| Task | Kind | Status |
+|---|---|---|
+| theme.ts, weather.ts, scene.ts, profile.ts | technical | ✅ Done |
+| Full suite and the board service's contract test unchanged | testing | ✅ Done |
+
+</details>
+
+### E12 · Show it off - 🟡 In progress
+
+**Outcome.** Someone landing on the repo sees what Claude Pets is in a few seconds, and can find it where plugins are listed.
+
+<details><summary><b>E12-S01</b> - as a <b>visitor</b>, I want <b>to see the pet move before I install it</b> · ✅ Done · 2 pts</summary>
+
+So that I know what I'm getting.
+
+**Acceptance criteria**
+- An animated demo at the top of the README, made from the mod's own drawing code, not a mock-up
+- It shows the pet walking and a few festivals with their keepsakes, and stays under 1 MB
+
+| Task | Kind | Status |
+|---|---|---|
+| Frames from petPixels, a GIF from the frames | technical | ✅ Done |
+| Checked by eye | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E12-S02</b> - as the <b>owner</b>, I want <b>Claude Pets listed where people look for plugins</b> · ⬜ To do · 1 pts</summary>
+
+So that people find it without a link.
+
+**Acceptance criteria**
+- Submitted to a plugin directory or marketplace listing, by the owner (it publishes under their name)
+- The repo has a description and topics (claude-code, plugin, pixel-art, pet)
+
+| Task | Kind | Status |
+|---|---|---|
+| Submit the listing | technical | ⬜ To do |
+| Repo description and topics | technical | ⬜ To do |
+
+</details>
+
+### E13 · More to celebrate - ✅ Done
+
+**Outcome.** Real work and the days that matter to you show up in the game.
+
+<details><summary><b>E13-S01</b> - as a <b>developer</b>, I want <b>achievements for real work</b> · ✅ Done · 3 pts</summary>
+
+So that the game rewards what I actually do, not only what the pet does.
+
+**Acceptance criteria**
+- CLEAN SHEET for 10 green test runs in a row, COMEBACK for turning failing tests green 5 times, SHIPPER for 10 commits, DEEP FOCUS for 10 focus rounds
+- Counted from the main session's commands; a commit with nothing to commit doesn't count
+- Each unlocks once, with a toast and a blind box like the others; `/pet board` shows the counts
+
+| Task | Kind | Status |
+|---|---|---|
+| Work record in the profile, four achievements | technical | ✅ Done |
+| Runs, fixes, commits and the once-only unlock asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E13-S02</b> - as a <b>player</b>, I want <b>keepsakes I can only get at a festival</b> · ✅ Done · 3 pts</summary>
+
+So that each festival leaves something behind.
+
+**Acceptance criteria**
+- One keepsake per festival: lucky envelope, star lantern, Santa hat, sparkler, heart glasses, pumpkin hat
+- Given once, the first time the festival is seen with festivals on; worn any time after with `/pet wear`
+- Not for sale and not in boxes; `/pet buy` says when it comes; `/pet collection` lists them
+
+| Task | Kind | Status |
+|---|---|---|
+| Items, art and the once-only gift | technical | ✅ Done |
+| Gift, shop refusal and the collection asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E13-S03</b> - as a <b>user</b>, I want <b>more festivals, and days of my own</b> · ✅ Done · 3 pts</summary>
+
+So that the band celebrates what matters to me.
+
+**Acceptance criteria**
+- Valentine's Day (hearts) and Halloween (pumpkins and a bat, 29 to 31 October)
+- `/pet festivals add MM-DD name` adds a yearly day with confetti (up to 12); `remove <name>` drops it; a built-in festival on the same day comes first
+- `/pet festivals` lists your days with the coming ones
+
+| Task | Kind | Status |
+|---|---|---|
+| Dates, drawing and the commands | technical | ✅ Done |
+| Dates, parsing, drawing and the commands asserted | testing | ✅ Done |
+
+</details>
+

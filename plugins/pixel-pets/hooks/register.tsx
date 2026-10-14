@@ -4,213 +4,37 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { PluginOptions, RenderChildren, SessionUsage } from 'claude-code'
 import type { RunnerProps } from './runner'
 import {
-  ANGRY_EYE, ART, BABY_W, BOX_PETS, HD, HD_H, HD_W, ITEMS, ITEM_IDS, KID_W, SKINS, SKIN_IDS, SPRITE_W, babySprite, extrasFor,
-  hdSprite, isItemId, isSkinId, itemPixels, nextStage, roundedPath, skinColors, sprite, stageOf, traceLoops, vectorPet,
+  ANGRY_EYE, BABY_W, BOX_PETS, HD_W, ITEMS, ITEM_IDS, KID_W, SKINS, SKIN_IDS, SPRITE_W, babySprite, isItemId, isSkinId, nextStage, stageOf, vectorPet,
 } from './art'
-import type { ItemId, Mood, PetArt, Pose, Rarity, SkinId, Stage } from './art'
-import { birthdayAge, daysBetween, festivalOn, nextBirthday, upcomingFestivals } from './seasons'
-import type { Festival, FestivalId } from './seasons'
+import type { ItemId, Mood, Pose, Rarity, SkinId } from './art'
+import { FESTIVALS, birthdayAge, daysBetween, festivalOn, nextBirthday, parseMyFestival, upcomingFestivals } from './seasons'
+import type { Festival, FestivalId, MyFestival } from './seasons'
 
 export { ITEMS, babySprite, extrasFor, sprite, stageOf } from './art'
 export type { ItemId, Mood, Stage } from './art'
-export { birthdayAge, festivalOn, midAutumnOf, nextBirthday, tetOf, upcomingFestivals } from './seasons'
+export { birthdayAge, festivalOn, midAutumnOf, nextBirthday, parseMyFestival, tetOf, upcomingFestivals } from './seasons'
 
 import type {
-  Failure, FontName, GitInfo, LogLine, PetKind, Story, StoryStatus, StoryTask, TestRun, ThemeName, Usage, UsageWindow,
+  Failure, FontName, GitInfo, LogLine, PetKind, Story, StoryStatus, StoryTask, TestRun, Usage, UsageWindow,
 } from '../types'
 
-// ── Themes ──────────────────────────────────────────────────────────────────
-// bg/fg the screen, dim/hi the secondary and emphasised text, then the semantic
-// colours every status maps onto.
-type Palette = {
-  bg: string; fg: string; dim: string; hi: string
-  pass: string; fail: string; warn: string; info: string
-  stripes: string[]
-  banner: string
-}
-
-const THEMES: Record<ThemeName, Palette> = {
-  // Ice cyan on deep navy, an 80s terminal: the default.
-  ice: {
-    bg: '#06131F', fg: '#5FE1FF', dim: '#2E7A99', hi: '#D8F7FF',
-    pass: '#7CF29A', fail: '#FF6B6B', warn: '#FFD166', info: '#B39DFF',
-    stripes: ['#0B2A3D', '#12506E', '#1E86A8', '#5FE1FF', '#D8F7FF'],
-    banner: '**** CLAUDE PETS ****',
-  },
-  // Green-phosphor CRT (IBM 5151 / Apple II monitor).
-  phosphor: {
-    bg: '#0B140D', fg: '#33FF66', dim: '#1E8C3E', hi: '#C8FFD4',
-    pass: '#8CFF5A', fail: '#FF5F56', warn: '#FFD23F', info: '#5FD7FF',
-    stripes: ['#0F3D1C', '#18692F', '#22A043', '#33FF66', '#C8FFD4'],
-    banner: '**** CLAUDE PETS · PHOSPHOR ****',
-  },
-  // Amber monochrome terminal (DEC VT220 / IBM 3270 amber).
-  amber: {
-    bg: '#120C02', fg: '#FFB000', dim: '#9A6A00', hi: '#FFE2A8',
-    pass: '#9BE564', fail: '#FF5A4E', warn: '#FFFFFF', info: '#7FD8F0',
-    stripes: ['#4A3000', '#7A5000', '#B87900', '#FFB000', '#FFE2A8'],
-    banner: '**** CLAUDE PETS · AMBER ****',
-  },
-  // The original Commodore 64 blue (Pepto palette).
-  c64: {
-    bg: '#40318D', fg: '#7869C4', dim: '#5A4DA8', hi: '#FFFFFF',
-    pass: '#94E089', fail: '#B86962', warn: '#BFCE72', info: '#67B6BD',
-    stripes: ['#883932', '#8B5429', '#BFCE72', '#55A049', '#67B6BD'],
-    banner: '**** CLAUDE PETS · C64 ****',
-  },
-  // Mint on charcoal, softer than phosphor.
-  mint: {
-    bg: '#0E1715', fg: '#7FFFD4', dim: '#3C8C78', hi: '#E0FFF6',
-    pass: '#A6F28C', fail: '#FF7A7A', warn: '#FFD97A', info: '#8CC8FF',
-    stripes: ['#143A31', '#1F6655', '#33A387', '#7FFFD4', '#E0FFF6'],
-    banner: '**** CLAUDE PETS · MINT ****',
-  },
-  // Rose on deep wine.
-  rose: {
-    bg: '#1A0D12', fg: '#FF8FB1', dim: '#A34D6B', hi: '#FFE0EA',
-    pass: '#9BE58C', fail: '#FF5A5A', warn: '#FFD166', info: '#7FD0FF',
-    stripes: ['#3D1724', '#6E2840', '#B8496E', '#FF8FB1', '#FFE0EA'],
-    banner: '**** CLAUDE PETS · ROSE ****',
-  },
-  // Plain white on black, no tint.
-  mono: {
-    bg: '#000000', fg: '#E6E6E6', dim: '#7A7A7A', hi: '#FFFFFF',
-    pass: '#8FE388', fail: '#FF6B6B', warn: '#FFD166', info: '#8CC8FF',
-    stripes: ['#262626', '#4D4D4D', '#808080', '#B3B3B3', '#FFFFFF'],
-    banner: '**** CLAUDE PETS · MONO ****',
-  },
-  // Dark ink on cream, for light terminals and editors.
-  paper: {
-    bg: '#F7F1E3', fg: '#1F3A5F', dim: '#8A8270', hi: '#0B1A2E',
-    pass: '#2E7D32', fail: '#C62828', warn: '#B26A00', info: '#1565C0',
-    stripes: ['#E3D9C0', '#C9B994', '#8A8270', '#1F3A5F', '#0B1A2E'],
-    banner: '**** CLAUDE PETS · PAPER ****',
-  },
-}
-export const THEME_NAMES = Object.keys(THEMES) as ThemeName[]
-
-// ── Your own colours (E5-S03) ────────────────────────────────────────────────
-// A theme is a preset's name or one accent colour, optionally on a background of
-// your own: `#FF8800` or `#FF8800 on #101010`. The rest of the palette is mixed
-// from those two, so any pair stays readable.
-const HEX_RE = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i
-export function normHex(s: string): string | null {
-  const m = HEX_RE.exec(s.trim())?.[1]
-  if (!m) return null
-  const six = m.length === 3 ? [...m].map(c => c + c).join('') : m
-  return `#${six.toUpperCase()}`
-}
-const rgb = (c: string) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)) as [number, number, number]
-const toHex = (r: number[]) => `#${r.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('').toUpperCase()}`
-/** `a` moved toward `b` by `t` (0..1). */
-export const mix = (a: string, b: string, t: number) => {
-  const x = rgb(a), y = rgb(b)
-  return toHex(x.map((v, i) => v + ((y[i] ?? 0) - v) * t))
-}
-const luma = (c: string) => {
-  const [r, g, b] = rgb(c)
-  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-}
-
-/** A theme spec read leniently: a preset name, `#accent` or `#accent on #background`; null when neither. */
-export function parseTheme(spec: string): string | null {
-  const s = spec.trim().toLowerCase()
-  if (isThemeName(s)) return s
-  const m = /^(#?[0-9a-f]{3,6})(?:\s+(?:on\s+)?(#?[0-9a-f]{3,6}))?$/i.exec(s)
-  if (!m) return null
-  const accent = normHex(m[1] ?? '')
-  const back = m[2] ? normHex(m[2]) : null
-  if (!accent || (m[2] && !back)) return null
-  return back ? `${accent} on ${back}` : accent
-}
-
-const paletteCache = new Map<string, Palette>()
-/** The palette for a theme spec; none (or an unknown one) means the settings' theme. */
-export function paletteOf(spec: string): Palette {
-  const key = parseTheme(spec) ?? CFG.theme
-  if (isThemeName(key)) return THEMES[key]
-  const hit = paletteCache.get(key)
-  if (hit) return hit
-  const [a, b] = key.split(' on ')
-  const fg = a ?? '#5FE1FF'
-  const isLightAccent = luma(fg) > 0.5
-  // no background given: a deep shade of the accent itself (or near-white for a dark accent)
-  const bg = b ?? (isLightAccent ? mix(fg, '#000000', 0.9) : mix(fg, '#FFFFFF', 0.92))
-  const isLight = luma(bg) > 0.5
-  const ink = isLight ? '#000000' : '#FFFFFF'
-  const p: Palette = {
-    bg, fg,
-    dim: mix(bg, fg, 0.55),
-    hi: mix(fg, ink, 0.7),
-    pass: isLight ? '#2E7D32' : '#7CF29A',
-    fail: isLight ? '#C62828' : '#FF6B6B',
-    warn: isLight ? '#B26A00' : '#FFD166',
-    info: isLight ? '#1565C0' : '#8CC8FF',
-    stripes: [mix(bg, fg, 0.2), mix(bg, fg, 0.45), mix(bg, fg, 0.7), fg, mix(fg, ink, 0.7)],
-    banner: '**** CLAUDE PETS ****',
-  }
-  paletteCache.set(key, p)
-  return p
-}
-
-// ── Banner fonts (E5-S04) ────────────────────────────────────────────────────
-// A plugin can't change the terminal's own font (that is the terminal's setting),
-// but the banner can be set in Unicode letter styles every font carries, or drawn
-// as big pixel letters.
-export const FONT_NAMES: FontName[] = ['plain', 'bold', 'mono', 'double', 'wide', 'pixel']
-export const isFontName = (x: unknown): x is FontName => typeof x === 'string' && (FONT_NAMES as string[]).includes(x)
-const STYLE_BASE: Record<'bold' | 'mono' | 'double', { upper: number; lower: number; digit: number }> = {
-  bold: { upper: 0x1d5d4, lower: 0x1d5ee, digit: 0x1d7ec },
-  mono: { upper: 0x1d670, lower: 0x1d68a, digit: 0x1d7f6 },
-  double: { upper: 0x1d538, lower: 0x1d552, digit: 0x1d7d8 },
-}
-// double-struck capitals that live in the Letterlike Symbols block instead
-const DOUBLE_HOLES: Record<string, number> = { C: 0x2102, H: 0x210d, N: 0x2115, P: 0x2119, Q: 0x211a, R: 0x211d, Z: 0x2124 }
-
-/** The text in a letter style; `pixel` is drawn, not typed, so its text is plain. */
-export function styleText(text: string, font: FontName): string {
-  if (font === 'plain' || font === 'pixel') return text
-  return [...text].map(ch => {
-    const c = ch.codePointAt(0) ?? 0
-    if (font === 'wide') {
-      if (ch === ' ') return '　'
-      return c >= 0x21 && c <= 0x7e ? String.fromCodePoint(c - 0x21 + 0xff01) : ch
-    }
-    const base = STYLE_BASE[font]
-    if (font === 'double' && DOUBLE_HOLES[ch]) return String.fromCodePoint(DOUBLE_HOLES[ch])
-    if (c >= 0x41 && c <= 0x5a) return String.fromCodePoint(base.upper + c - 0x41)
-    if (c >= 0x61 && c <= 0x7a) return String.fromCodePoint(base.lower + c - 0x61)
-    if (c >= 0x30 && c <= 0x39) return String.fromCodePoint(base.digit + c - 0x30)
-    return ch
-  }).join('')
-}
-/** Terminal cells the styled text takes: fullwidth letters take two. */
-export const cellsOf = (text: string) => [...text].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) >= 0x3000 && (ch.codePointAt(0) ?? 0) <= 0xffef ? 2 : 1), 0)
-
-// 3×5 pixel letters for the banner, '#' lit.
-const PIXEL_FONT: Record<string, string[]> = {
-  A: ['.#.', '#.#', '###', '#.#', '#.#'], C: ['.##', '#..', '#..', '#..', '.##'],
-  D: ['##.', '#.#', '#.#', '#.#', '##.'], E: ['###', '#..', '##.', '#..', '###'],
-  L: ['#..', '#..', '#..', '#..', '###'], P: ['##.', '#.#', '##.', '#..', '#..'],
-  S: ['.##', '#..', '.#.', '..#', '##.'], T: ['###', '.#.', '.#.', '.#.', '.#.'],
-  U: ['#.#', '#.#', '#.#', '#.#', '.##'], ' ': ['...', '...', '...', '...', '...'],
-}
-export const PIXEL_TITLE = 'CLAUDE PETS'
-/** The title as a pixel grid: one string per pixel row, '#' lit. */
-export function pixelTitle(text = PIXEL_TITLE): string[] {
-  const rows = ['', '', '', '', '']
-  for (const ch of text.toUpperCase()) {
-    const g = PIXEL_FONT[ch] ?? PIXEL_FONT[' ']!
-    for (let y = 0; y < 5; y++) rows[y] += (g[y] ?? '...') + '.'
-  }
-  return rows.map(r => r.slice(0, -1))
-}
-
-type Tone = Exclude<keyof Palette, 'stripes' | 'banner'>
-const ENV_TONE: Record<string, Tone> = { DEV: 'pass', TST: 'warn', UAT: 'info', PROD: 'fail' }
-const STATUS_TONE: Record<StoryStatus, Tone> = {
-  LIVE: 'pass', DONE: 'pass', DARK: 'info', PARTIAL: 'warn', TODO: 'dim', BLOCKED: 'fail', PROPOSED: 'hi', UNKNOWN: 'dim',
-}
+import { THEME_NAMES, parseTheme, paletteOf, FONT_NAMES, isFontName, styleText, cellsOf, ENV_TONE, STATUS_TONE, isThemeName, setFallbackTheme } from './theme'
+import type { Palette, Tone } from './theme'
+export { THEME_NAMES, normHex, mix, parseTheme, paletteOf, FONT_NAMES, isFontName, styleText, cellsOf, PIXEL_TITLE, pixelTitle } from './theme'
+import { WINDY_KMH, WEATHER_EVERY_MS, wmo, fmtTemp, fmtWind, weatherRow } from './weather'
+import type { TempUnit, WeatherPlace, Weather } from './weather'
+export { wmo, toF, fmtTemp, fmtWind } from './weather'
+export type { WeatherKind, WeatherPlace, Weather } from './weather'
+import {
+  PET_ROWS, PET_MIN_ROWS, GRUMPY_AT, FURIOUS_AT, PETS, PET_KINDS, isPetKind, hex, stripRows, HD_MIN_ROWS, petCells, SVG_EVERY, SVG_FONT, css, esc, petSvg, titleCells, titleSvg, BUG,
+} from './scene'
+import type { HudSegment, PetFrame } from './scene'
+import { ACHIEVEMENTS, COUNTER, dayOf, freshProfile, nextStreak, noteTestRun, workOf } from './profile'
+import type { Profile, Work, XpReason } from './profile'
+export { ACHIEVEMENTS, dayOf, nextStreak, noteTestRun } from './profile'
+export type { Profile, Work, XpReason } from './profile'
+export { PETS, PET_KINDS, isPetKind, stripRows, petPixels, petCells, SVG_PX, petSvg, titleCells, titleSvg } from './scene'
+export type { HudSegment, Sky, PetFrame } from './scene'
 
 // ── Backlog sources: markdown, not an issue tracker ───────────────────────────────────
 // The band's rows by name. Drawn in the order the `bandRows` setting lists them;
@@ -220,61 +44,6 @@ const DEFAULT_ROWS: BandRow[] = ['banner', 'git', 'usage', 'weather', 'story', '
 const DROP_ORDER: BandRow[] = ['banner', 'git', 'tests', 'story', 'weather', 'usage']
 
 /** The rows a `bandRows` value names, in its order; unknown names ignored, nothing valid means the default. */
-// ── Weather (E2): Open-Meteo, no key; nothing is fetched until a place is set ──
-type TempUnit = 'both' | 'c' | 'f'
-export type WeatherKind = 'clear' | 'cloudy' | 'fog' | 'rain' | 'snow' | 'storm'
-export type WeatherPlace = { name: string; lat: number; lon: number }
-export type Weather = {
-  place: string
-  tempC: number
-  code: number
-  kind: WeatherKind
-  label: string
-  windKmh: number
-  isDay: boolean
-}
-const WINDY_KMH = 30
-const WEATHER_EVERY_MS = 15 * 60_000
-
-/** WMO weather codes, as Open-Meteo reports them, to a kind and a label. */
-export function wmo(code: number): { kind: WeatherKind; label: string } {
-  if (code === 0) return { kind: 'clear', label: 'CLEAR' }
-  if (code <= 2) return { kind: 'cloudy', label: code === 1 ? 'MAINLY CLEAR' : 'PARTLY CLOUDY' }
-  if (code === 3) return { kind: 'cloudy', label: 'OVERCAST' }
-  if (code === 45 || code === 48) return { kind: 'fog', label: 'FOG' }
-  if (code >= 51 && code <= 57) return { kind: 'rain', label: 'DRIZZLE' }
-  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return { kind: 'rain', label: code >= 80 ? 'SHOWERS' : 'RAIN' }
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { kind: 'snow', label: 'SNOW' }
-  if (code >= 95) return { kind: 'storm', label: 'THUNDERSTORM' }
-  return { kind: 'cloudy', label: 'CLOUDY' }
-}
-
-export const toF = (c: number) => Math.round((c * 9) / 5 + 32)
-export function fmtTemp(c: number, unit: TempUnit): string {
-  const C = `${Math.round(c)}°C`, F = `${toF(c)}°F`
-  return unit === 'c' ? C : unit === 'f' ? F : `${C} / ${F}`
-}
-export const fmtWind = (kmh: number, unit: TempUnit) =>
-  unit === 'f' ? `${Math.round(kmh * 0.621)} MPH` : `${Math.round(kmh)} KM/H`
-
-function weatherIcon(wx: Weather): string {
-  if (wx.kind === 'clear') return wx.isDay ? '☀' : '☾'
-  return { cloudy: '☁', fog: '≋', rain: '☂', snow: '❄', storm: '⚡' }[wx.kind]
-}
-
-function weatherRow(Box: unknown, Text: unknown, C: Palette, wx: Weather | null, unit: TempUnit): RenderChildren {
-  if (!wx) return null
-  const B = Box as never, T = Text as never
-  const tone = wx.kind === 'storm' ? C.fail : wx.kind === 'clear' && wx.isDay ? C.warn : C.info
-  return h(B, { flexDirection: 'row' },
-    h(T, { color: tone, backgroundColor: C.bg, bold: true }, ` ${weatherIcon(wx)} ${fmtTemp(wx.tempC, unit)}`),
-    h(T, { color: C.fg, backgroundColor: C.bg }, ` · ${wx.label}`),
-    h(T, { color: wx.windKmh >= WINDY_KMH ? C.warn : C.dim, backgroundColor: C.bg }, ` · WIND ${fmtWind(wx.windKmh, unit)}`),
-    h(T, { color: C.dim, backgroundColor: C.bg, wrap: 'truncate' }, ` · ${wx.place.toUpperCase()}`),
-  ) as RenderChildren
-}
-
-/** Finds a place by name (Open-Meteo geocoding). */
 async function geocode($: EngineInterface, query: string): Promise<WeatherPlace | null> {
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`
   const r = await $.http.fetch(url)
@@ -397,6 +166,7 @@ export function configure(options: PluginOptions) {
   const kind = str('petKind')
   if (isPetKind(kind) && !BOX_PETS.includes(kind)) CFG.petKind = kind
   CFG.theme = parseTheme(str('theme')) ?? 'ice'
+  setFallbackTheme(CFG.theme)
   const f = str('font').toLowerCase()
   CFG.font = isFontName(f) ? f : 'plain'
   CFG.breaks = parseBreaks(str('breaks')) ?? 60
@@ -426,7 +196,6 @@ const log = atom({ plugin: 'pixel-pets', key: 'log' } as const, [])
 const isBandHidden = atom({ plugin: 'pixel-pets', key: 'isBandHidden' } as const, false)
 const blink = atom({ plugin: 'pixel-pets', key: 'blink' } as const, true)
 const theme = atom({ plugin: 'pixel-pets', key: 'theme' } as const, '')
-const isThemeName = (x: unknown): x is ThemeName => typeof x === 'string' && Object.hasOwn(THEMES, x)
 const font = atom({ plugin: 'pixel-pets', key: 'font' } as const, 'plain')
 /** The pet drawn as SVG for the desktop app, VS Code and phones, redrawn as it moves (E5-S01). */
 const petArt = atom({ plugin: 'pixel-pets', key: 'petArt' } as const, '')
@@ -802,456 +571,7 @@ async function refreshStatus($: EngineInterface) {
   $.ui.status(`▌PETS▐ READY. │ ${fmtModel(model)} │ ${where}${limBit} │ ${fmtTokens(tok)} TOK${run}${testBit}`)
 }
 
-// ── Pet: an 8-bit mini game along the bottom of the band ─────────────────────
-// Mini sprites, 7×4 pixels facing left; two pixels stack in one cell with ▀/▄,
-// so the pet is two terminal rows tall. The ground row is the game's HUD:
-//   ♥♥♥♡♡ LV3 XP 042 ◆7 · PIXEL WANDERS
-// Hearts are the plan's headroom (the fuller of the 5-hour and weekly windows),
-// coins drop for every tool call that succeeds, bugs crawl in on every error and
-// the pet hunts them. XP is saved between sessions.
-const PET_ROWS = 3 // 2 rows of pixels (4 px) + the ground row, which carries the HUD
-// The pet needs its strip and the READY. line; info rows fill whatever room is left.
-const PET_MIN_ROWS = PET_ROWS + 1
-const GRUMPY_AT = 70
-const FURIOUS_AT = 90
-
-type PetDef = PetArt & {
-  /** Sound files in sounds/: its everyday voice and its cross one. */
-  voice: { happy: string; cross: string }
-  ideas: string[]
-  emoji: string
-}
-
-const PET_LIFE: Record<PetKind, Omit<PetDef, keyof PetArt>> = {
-  cat: { voice: { happy: 'meow', cross: 'meow_grumpy' }, ideas: ['Pixel', 'Mochi', 'Byte', 'Sprite'], emoji: '🐈' },
-  dog: { voice: { happy: 'woof', cross: 'woof_grumpy' }, ideas: ['Chip', 'Bitsy', 'Rex64', 'Turbo'], emoji: '🐕' },
-  crab: { voice: { happy: 'click', cross: 'click_grumpy' }, ideas: ['Ferris', 'Pinchy', 'Clawde', 'Sidestep'], emoji: '🦀' },
-  shark: { voice: { happy: 'chomp', cross: 'grumble_low' }, ideas: ['Finn', 'Chompy', 'Bruce', 'Jawsome'], emoji: '🦈' },
-  turtle: { voice: { happy: 'hum', cross: 'grumble_low' }, ideas: ['Shelly', 'Tank', 'Crush', 'Sheldon'], emoji: '🐢' },
-  mouse: { voice: { happy: 'squeak', cross: 'grumble_high' }, ideas: ['Cheddar', 'Nibbles', 'Clicky', 'Squeak'], emoji: '🐁' },
-  fox: { voice: { happy: 'yip', cross: 'grumble_high' }, ideas: ['Rusty', 'Ember', 'Firefox', 'Todd'], emoji: '🦊' },
-  orca: { voice: { happy: 'song', cross: 'grumble_low' }, ideas: ['Tux', 'Domino', 'Shamu', 'Oreo'], emoji: '🐋' },
-  whale: { voice: { happy: 'song', cross: 'grumble_low' }, ideas: ['Moby', 'Bubbles', 'Blue', 'Humphrey'], emoji: '🐳' },
-  dolphin: { voice: { happy: 'whistle', cross: 'grumble_high' }, ideas: ['Flipper', 'Echo', 'Splash', 'Clicker'], emoji: '🐬' },
-  giraffe: { voice: { happy: 'hum', cross: 'grumble_low' }, ideas: ['Stretch', 'Patches', 'Highway', 'Geoffrey'], emoji: '🦒' },
-  tiger: { voice: { happy: 'roar', cross: 'grumble_low' }, ideas: ['Stripes', 'Rajah', 'Hobbes', 'Tigger'], emoji: '🐅' },
-  squirrel: { voice: { happy: 'chitter', cross: 'grumble_high' }, ideas: ['Nutmeg', 'Acorn', 'Hazel', 'Scrat'], emoji: '🐿' },
-  penguin: { voice: { happy: 'honk', cross: 'grumble_high' }, ideas: ['Pingu', 'Waddles', 'Tux', 'Skipper'], emoji: '🐧' },
-  dragon: { voice: { happy: 'roar', cross: 'grumble_low' }, ideas: ['Ember', 'Smaug', 'Puff', 'Spark'], emoji: '🐉' },
-  unicorn: { voice: { happy: 'whistle', cross: 'grumble_high' }, ideas: ['Sparkle', 'Stardust', 'Twilight', 'Glimmer'], emoji: '🦄' },
-  axolotl: { voice: { happy: 'squeak', cross: 'grumble_high' }, ideas: ['Axel', 'Bubblegum', 'Gilly', 'Lotl'], emoji: '🦎' },
-}
-export const PETS = Object.fromEntries(
-  (Object.keys(ART) as PetKind[]).map(k => [k, { ...ART[k], ...PET_LIFE[k] }]),
-) as Record<PetKind, PetDef>
-export const PET_KINDS = Object.keys(PETS) as PetKind[]
-export const isPetKind = (x: unknown): x is PetKind => typeof x === 'string' && (PETS as Record<string, unknown>)[x] !== undefined
-
-function b64(bytes: Uint8Array): string {
-  let bin = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return btoa(bin)
-}
-const hex = (c: string) => parseInt(c.slice(1), 16)
-
-export type HudSegment = { text: string; color: number }
-
-export type Sky = { kind: WeatherKind; isDay: boolean; windy: boolean; dir: 1 | -1 }
-
-/** A stable pseudo-random number per column, so drops and stars stay put between frames. */
-const hash = (n: number) => {
-  let x = (n * 2654435761) >>> 0
-  x ^= x >>> 15
-  return x % 997
-}
-
-export type PetFrame = {
-  /** The weather behind the pet; drawn first, so nothing of it covers the pet. */
-  sky?: Sky | null
-  tick?: number
-  kind: PetKind
-  columns: number
-  x: number
-  dir: 1 | -1
-  pose: Pose
-  mood: Mood
-  lift: number
-  bubble: { glyph: string; color: number } | null
-  ballX: number | null
-  coins: number[]
-  bugs: { x: number }[]
-  sparkle: boolean
-  bg: string
-  ground: string
-  /** The C64 cursor, blinking in the top-left cell on the line after READY. */
-  cursor: { color: number } | null
-  hud: HudSegment[]
-  /** Helper pets: one per running subagent; `tag` is drawn above it. */
-  kids?: { x: number; dir: 1 | -1; pose: Pose; tag: string; tagColor: number }[]
-  /** Its stage (E6-S03); absent means adult. */
-  stage?: Stage
-  /** What it wears (E6-S02). */
-  items?: ItemId[]
-  /** A rocket flame under it (E6-S04). */
-  flame?: boolean
-  /** A friend's pet on a visit (E7-S02). */
-  guest?: { kind: PetKind; x: number; dir: 1 | -1; pose: Pose; stage: Stage; items: ItemId[] }
-  /** The new look's bigger sprites, 8 pixels tall (E10); absent, the classic 4. */
-  hd?: boolean
-  /** A colouring from a blind box (E9). */
-  skin?: SkinId | null
-  /** A blind box being opened beside the pet (E9). */
-  box?: { x: number; isOpen: boolean; shake: number } | null
-  /** Draw only the scene, no pets (the SVG draws them as shapes). */
-  sceneOnly?: boolean
-  /** A festival's decorations behind the pet (E8-S03). */
-  festival?: FestivalId | null
-}
-
-/** How many terminal rows the strip takes: the pixels, two to a row, and the ground. */
-export const stripRows = (hd: boolean) => (hd ? HD_H : 4) / 2 + 1
-/** The new look's sprites need this many band rows before `auto` picks them. */
-const HD_MIN_ROWS = 10
-/** `auto`: the new look's bigger sprites when the band has room; `big` and `small` choose (E10). */
 let petSize: 'auto' | 'big' | 'small' = 'auto'
-const BOX_BROWN = 0x8d5a2b, BOX_GOLD = 0xffd23f, BOX_RED = 0xe53935
-
-const COIN = 0xffd23f, COIN_SHINE = 0xfff6a0, BUG = 0xb04cff, BUG_LEGS = 0x6a1fb0
-
-/** One frame's pixels, W × H (H = 4), row-major; null where the sky shows through. */
-export function petPixels(f: PetFrame): { px: (number | null)[]; W: number; H: number; x0: number; pw: number } {
-  const W = f.columns, H = f.hd ? HD_H : 4
-  const px: (number | null)[] = new Array<number | null>(W * H).fill(null)
-  const set = (X: number, Y: number, c: number) => {
-    if (X >= 0 && X < W && Y >= 0 && Y < H) px[Y * W + X] = c
-  }
-  if (f.sky) {
-    const t = f.tick ?? 0, sky = f.sky
-    if (sky.kind === 'clear') {
-      if (sky.isDay) {
-        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) set(W - 6 + dx, dy, 0xffd23f)
-      } else {
-        for (const [dx, dy] of [[0, 0], [1, 0], [1, 1]] as const) set(W - 6 + dx, dy, 0xf3f0d0)
-        for (let x = 1; x < W - 8; x++) if (hash(x) % 11 === 0 && (hash(x + t / 16) | 0) % 3) set(x, hash(x * 7) % 2, 0x8f9bd6)
-      }
-    }
-    if (sky.kind !== 'clear' && sky.kind !== 'fog') {
-      const grey = sky.kind === 'storm' ? 0x5c6672 : sky.kind === 'cloudy' ? 0xb8c2cc : 0x8996a3
-      const drift = (sky.windy ? 0.5 : 0.12) * sky.dir
-      for (let c = 0; c < 3; c++) {
-        const span = W + 8
-        const cx = Math.round((((c * span) / 3 + t * drift) % span + span) % span) - 6
-        for (const [dx, dy] of [[1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1]] as const) set(cx + dx, dy, grey)
-      }
-    }
-    if (sky.kind === 'rain' || sky.kind === 'storm' || sky.kind === 'snow') {
-      const isSnow = sky.kind === 'snow'
-      for (let x = 0; x < W; x++) {
-        if (hash(x) % (isSnow ? 7 : 4) !== 0) continue
-        const y = 2 + ((Math.floor(t / (isSnow ? 3 : 1)) + hash(x + 5)) % (H - 2))
-        set(x + (sky.windy ? sky.dir * (y - 2) : 0), y, isSnow ? 0xf0f6ff : 0x5fa8ff)
-      }
-    }
-    if (sky.kind === 'storm' && t % 40 < 2) {
-      const bx = 6 + (hash(Math.floor(t / 40)) % Math.max(1, W - 12))
-      for (const [dx, dy] of [[0, 0], [1, 1], [0, 2], [1, 3]] as const) set(bx + dx, dy, 0xfff36b)
-    }
-    if (sky.kind === 'fog') {
-      for (let x = 0; x < W; x++) if ((x + Math.floor(t / 6)) % 3 === 0) set(x, 1 + (x % 2), 0x6f7a85)
-    }
-  }
-  if (f.festival) drawFestival(set, f.festival, W, H, f.tick ?? 0)
-  for (const cx of f.coins) {
-    set(Math.round(cx), H - 2, f.sparkle ? COIN_SHINE : COIN)
-    set(Math.round(cx), H - 1, COIN)
-  }
-  for (const b of f.bugs) {
-    const bx = Math.round(b.x)
-    set(bx, H - 2, BUG)
-    set(bx + 1, H - 2, BUG)
-    set(f.sparkle ? bx : bx + 1, H - 1, BUG_LEGS)
-  }
-  if (f.ballX !== null) {
-    set(Math.round(f.ballX), H - 1, COIN)
-    set(Math.round(f.ballX) + 1, H - 1, COIN)
-  }
-  if (f.box) {
-    // a gift box: shaking, then its lid up and a sparkle (E9)
-    const bx = Math.round(f.box.x) + (f.box.shake % 2), w = f.hd ? 5 : 4, h = f.hd ? 4 : 3
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(bx + x, H - h + y, x === Math.floor(w / 2) || y === 0 ? BOX_GOLD : BOX_BROWN)
-    if (f.box.isOpen) {
-      for (let x = -1; x <= w; x++) set(bx + x, H - h - 2, BOX_RED)
-      set(bx + Math.floor(w / 2), H - h - 3, f.sparkle ? COIN_SHINE : BOX_GOLD)
-    }
-  }
-  if (f.sceneOnly) return { px, W, H, x0: Math.round(f.x), pw: 0 }
-  const colors: Record<string, number> = { E: ANGRY_EYE, ...PETS[f.kind].colors }
-  for (const k of f.kids ?? []) {
-    babySprite(f.kind, k.pose).forEach((row, ry) => {
-      for (let rx = 0; rx < KID_W; rx++) {
-        const c = colors[row[k.dir === 1 ? KID_W - 1 - rx : rx] ?? '.']
-        if (c !== undefined) set(Math.round(k.x) + rx, H - 3 + ry, c)
-      }
-    })
-  }
-  /** One pet standing on the ground at x, `lift` pixels up: its sprite, what it wears, and a rocket flame when asked. */
-  let pw = SPRITE_W
-  const drawPet = (kind: PetKind, stage: Stage, pose: Pose, mood: Mood, items: ItemId[], x: number, dir: 1 | -1, lift: number, flame: boolean, skin: SkinId | null) => {
-    let rows: string[], palette: Record<string, number>, extras: [number, number, number][]
-    if (f.hd) {
-      rows = hdSprite(kind, stage, pose, mood)
-      const cs = skinColors(HD[kind].colors, skin)
-      palette = { ...cs, E: ANGRY_EYE, z: cs[HD[kind].fill] ?? 0x888888 }
-      extras = itemPixels(rows, items)
-      // a hat on a pet as tall as the strip would be cut off: it sits a pixel lower, over the ear tips
-      const over = H - rows.length - lift + Math.min(0, ...extras.map(e => e[1]))
-      if (over < 0) extras = extras.map(([x, y, c]) => [x, y + 1, c])
-      const sw = Math.max(...rows.map(r => r.length)), t = f.tick ?? 0
-      if (stage === 'legend' || stage === 'mythic') extras.push(t % 10 < 5 ? [-1, 0, 0xfff6a0] : [sw, 1, 0xfff6a0])
-      if (stage === 'mythic') {
-        const up = t % 6 < 3 ? 0 : 1, wx = Math.round(sw * 0.62)
-        extras.push([wx, up - 1, 0xf5f5ff], [wx + 1, up - 1, 0xf5f5ff], [wx + 2, up, 0xdde4ff])
-      }
-    } else {
-      rows = stage === 'baby' ? babySprite(kind, pose, mood) : sprite(kind, pose, mood)
-      palette = { E: ANGRY_EYE, ...skinColors(PETS[kind].colors, skin) }
-      extras = extrasFor(kind, stage, items, f.tick ?? 0)
-    }
-    const sw = Math.max(...rows.map(r => r.length)), top = H - rows.length - lift
-    // the sprite is drawn facing left; facing right mirrors it
-    const at = (sx: number) => x + (dir === 1 ? sw - 1 - sx : sx)
-    rows.forEach((row, sy) => {
-      for (let sx = 0; sx < sw; sx++) {
-        const c = palette[row[sx] ?? '.']
-        if (c !== undefined) set(at(sx), top + sy, c)
-      }
-    })
-    for (const [sx, sy, c] of extras) set(at(sx), top + sy, c)
-    if (flame) {
-      const mid = Math.floor(sw / 2), t = f.tick ?? 0
-      set(at(mid), top + rows.length, t % 2 ? 0xff9800 : 0xffeb3b)
-      set(at(mid + 1), top + rows.length, t % 2 ? 0xffeb3b : 0xff5722)
-    }
-    return sw
-  }
-  // a visiting friend's pet (E7-S02), behind the main pet
-  if (f.guest) drawPet(f.guest.kind, f.guest.stage, f.guest.pose, 'happy', f.guest.items, Math.round(f.guest.x), f.guest.dir, 0, false, null)
-  const x0 = Math.round(f.x)
-  pw = drawPet(f.kind, f.stage ?? 'adult', f.pose, f.mood, f.items ?? [], x0, f.dir, f.lift, f.flame ?? false, f.skin ?? null)
-  return { px, W, H, x0, pw }
-}
-
-const FIREWORK = [0xff5252, 0xffd23f, 0x69f0ae, 0x40c4ff, 0xe040fb]
-
-/**
- * A festival's decorations (E8-S03), drawn behind the pet: red lanterns at Tết, the
- * full moon and mooncakes at Mid-Autumn, a tree in the snow at Christmas, fireworks at New Year.
- */
-function drawFestival(set: (x: number, y: number, c: number) => void, id: FestivalId, W: number, H: number, t: number) {
-  const tall = H > 4
-  if (id === 'tet') {
-    for (let i = 0, x = 5; x < W - 4; i++, x += 17) {
-      const sway = ((t >> 3) + i) % 4 === 0 ? 1 : 0
-      set(x + sway, 0, 0xffc107)
-      for (let y = 1; y <= (tall ? 3 : 2); y++) for (let dx = 0; dx < 2; dx++) set(x + dx + sway, y, y === 2 && tall ? 0xffc107 : 0xe53935)
-      if (tall) set(x + sway, 4, 0xffc107)
-    }
-  } else if (id === 'midautumn') {
-    // a round full moon, and mooncakes spread along the ground
-    const mx = W - 13, disc = tall ? ['.##.', '####', '####', '.##.'] : ['.##.', '####', '.##.']
-    disc.forEach((r, dy) => [...r].forEach((ch, dx) => ch === '#' && set(mx + dx, dy, dy === 1 && dx === 1 ? 0xffe28a : 0xfff1b8)))
-    for (let i = 0; i < 3; i++) {
-      const cx = 6 + i * Math.max(4, Math.floor((W - 22) / 3))
-      set(cx, H - 2, 0xe0a85a)
-      set(cx + 1, H - 2, 0xe0a85a)
-      set(cx, H - 1, 0xb87333)
-      set(cx + 1, H - 1, 0xb87333)
-    }
-  } else if (id === 'christmas') {
-    for (let x = 0; x < W; x++) {
-      if (hash(x + 11) % 6 !== 0) continue
-      set(x, (Math.floor(t / 3) + hash(x + 3)) % (H - 1), 0xf0f6ff)
-    }
-    const tx = W - 16, levels = tall ? [1, 1, 3, 3, 5, 5, 7] : [1, 3, 5]
-    set(tx, 0, 0xffd23f)
-    levels.forEach((w, i) => {
-      const y = i + 1
-      if (y >= H - 1) return
-      for (let dx = -(w >> 1); dx <= w >> 1; dx++) {
-        const bauble = w > 1 && (hash(tx + dx * 7 + y * 13) % 5 === 0)
-        set(tx + dx, y, bauble ? ((t >> 2) + dx + y) % 2 ? 0xff5252 : 0xffd23f : 0x2e7d32)
-      }
-    })
-    set(tx, H - 1, 0x795548)
-  } else {
-    for (let i = 0; i < 2; i++) {
-      const life = 28, phase = (t + i * 14) % life, cycle = Math.floor((t + i * 14) / life)
-      const cx = 4 + (hash(cycle * 13 + i * 7) % Math.max(1, W - 8)), cy = tall ? 2 : 1
-      const c = FIREWORK[(cycle + i) % FIREWORK.length]!
-      if (phase < 6) {
-        set(cx, H - 1 - Math.round(((H - 1 - cy) * phase) / 6), 0xfff6a0)
-      } else if (phase < 22) {
-        const r = Math.min(tall ? 3 : 2, 1 + Math.floor((phase - 6) / 4))
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) set(cx + dx * r, cy + Math.round(dy * r * 0.6), c)
-      }
-    }
-  }
-}
-
-/** Packs one frame into Raster cells: [codePoint, fg, bg] u32 triplets, row-major. */
-export function petCells(f: PetFrame): string {
-  const { px, W, H, x0, pw } = petPixels(f)
-  const ROWS = H / 2 + 1
-  const bg = hex(f.bg), ground = hex(f.ground)
-  const words = new Uint32Array(W * ROWS * 3)
-  const put = (i: number, cp: number, fg: number, back: number) => {
-    words[i * 3] = cp
-    words[i * 3 + 1] = fg
-    words[i * 3 + 2] = back
-  }
-  for (let r = 0; r < ROWS - 1; r++) {
-    for (let x = 0; x < W; x++) {
-      const top = px[r * 2 * W + x] ?? null, bot = px[(r * 2 + 1) * W + x] ?? null
-      const i = r * W + x
-      if (top === null && bot === null) put(i, 0x20, bg, bg)
-      else if (bot === null) put(i, 0x2580, top ?? bg, bg)
-      else if (top === null) put(i, 0x2584, bot, bg)
-      else put(i, 0x2580, top, bot)
-    }
-  }
-  // the ground: a brick-ish strip, the HUD written over it
-  const groundAt = (ROWS - 1) * W
-  for (let x = 0; x < W; x++) put(groundAt + x, x % 4 === 3 ? 0x2580 : 0x2594, ground, bg)
-  let col = 2
-  for (const seg of [{ text: ' ', color: ground }, ...f.hud, { text: ' ', color: ground }]) {
-    for (const ch of seg.text) {
-      if (col >= W) break
-      const cp = ch.codePointAt(0) ?? 0x20
-      put(groundAt + col, cp > 0xffff ? 0x3f : cp, seg.color, bg)
-      col++
-    }
-  }
-  if (f.cursor && px[0] === null && px[W] === null) put(0, 0x2588, f.cursor.color, bg)
-  for (const k of f.kids ?? []) {
-    const tx = Math.min(W - 1, Math.max(0, Math.round(k.x) + 2)), ty = (H - 4) / 2
-    if (px[ty * 2 * W + tx] === null && px[(ty * 2 + 1) * W + tx] === null) put(ty * W + tx, k.tag.codePointAt(0) ?? 0x3f, k.tagColor, bg)
-  }
-  if (f.bubble) {
-    const bx = Math.min(W - 1, Math.max(0, x0 + (f.dir === 1 ? pw : -1)))
-    put(bx, f.bubble.glyph.codePointAt(0) ?? 0x21, f.bubble.color, bg)
-  }
-  return b64(new Uint8Array(words.buffer))
-}
-
-// ── The pet as SVG (E5-S01/S02) ──────────────────────────────────────────────
-// The desktop app, VS Code and phones have no pixel grid (Raster), but they draw
-// SVG: the same frame, a square per pixel, with the HUD as text on the ground.
-export const SVG_PX = 6
-const SVG_EVERY = 4
-const SVG_HUD_H = 18
-const SVG_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
-const css = (c: number) => `#${c.toString(16).padStart(6, '0')}`
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-/** Lit pixels as SVG rects, runs of one colour along a row merged into one rect. */
-function pixelRects(px: (number | null)[], W: number, H: number, P: number, dy = 0): string {
-  let out = ''
-  for (let y = 0; y < H; y++) {
-    let x = 0
-    while (x < W) {
-      const c = px[y * W + x] ?? null
-      if (c === null) { x++; continue }
-      let run = 1
-      while (x + run < W && px[y * W + x + run] === c) run++
-      out += `<rect x="${x * P}" y="${y * P + dy}" width="${run * P}" height="${P}" fill="${css(c)}"/>`
-      x += run
-    }
-  }
-  return out
-}
-
-/** Lit pixels of one scene as soft shapes, one path per colour. */
-function softRegions(px: (number | null)[], W: number, H: number): string {
-  const byColor = new Set<number>()
-  for (const c of px) if (c !== null) byColor.add(c)
-  let out = ''
-  for (const c of byColor) out += `<path d="${roundedPath(traceLoops((x, y) => x >= 0 && y >= 0 && x < W && y < H && px[y * W + x] === c, W, H), 0.5)}" fill="${css(c)}"/>`
-  return out
-}
-
-/**
- * One frame as an SVG document in the new look (E10): the sky, coins, bugs and
- * any gift box as soft shapes, the pets as outlined cartoons, the HUD on the ground.
- */
-export function petSvg(f: PetFrame): string {
-  const { px, W, H } = petPixels({ ...f, hd: true, sceneOnly: true })
-  // room above the sky for hats, crowns and wings
-  const HEAD = 4
-  const P = SVG_PX, w = W * P, top = (H + HEAD) * P, h = top + SVG_HUD_H
-  const ground = f.ground
-  const tick = f.tick ?? 0
-  const place = (svg: string, x: number, lift: number, scale = 1) =>
-    `<g transform="translate(${x * P} ${top - HD_H * P * scale - lift * P}) scale(${P * scale})">${svg}</g>`
-  const pets: string[] = []
-  for (const k of f.kids ?? []) {
-    pets.push(place(vectorPet({ kind: f.kind, stage: 'baby', pose: k.pose, mood: 'happy', dir: k.dir, tick, isBlinking: false }).svg, Math.round(k.x), 0, 0.6))
-  }
-  const g = f.guest
-  if (g) pets.push(place(vectorPet({ kind: g.kind, stage: g.stage, pose: g.pose, mood: 'happy', items: g.items, dir: g.dir, tick }).svg, Math.round(g.x), 0))
-  const me = vectorPet({ kind: f.kind, stage: f.stage ?? 'adult', pose: f.pose, mood: f.mood, items: f.items ?? [], skin: f.skin ?? null, dir: f.dir, tick })
-  const x0 = Math.round(f.x)
-  if (f.flame) pets.push(`<ellipse cx="${(x0 + me.w / 2) * P}" cy="${top - 2}" rx="${P * 0.9}" ry="${P * 0.7}" fill="${tick % 2 ? '#ff9800' : '#ffeb3b'}"/>`)
-  pets.push(place(me.svg, x0, f.lift))
-  const hudText = f.hud.map(seg => `<tspan fill="${css(seg.color)}">${esc(seg.text)}</tspan>`).join('')
-  const bubble = f.bubble
-    ? `<text x="${Math.min(W - 1, Math.max(0, x0 + (f.dir === 1 ? me.w : -1))) * P}" y="${top - HD_H * P + P * 1.2}" font-size="${P * 1.8}" font-family="${SVG_FONT}" fill="${css(f.bubble.color)}">${esc(f.bubble.glyph)}</text>`
-    : ''
-  const tags = (f.kids ?? []).map(k => `<text x="${(Math.round(k.x) + 2) * P}" y="${top - HD_H * P * 0.6 - 2}" font-size="${P * 1.4}" font-family="${SVG_FONT}" fill="${css(k.tagColor)}">${esc(k.tag)}</text>`).join('')
-  const cursor = f.cursor ? `<rect x="0" y="0" width="${P}" height="${P * 2}" fill="${css(f.cursor.color)}"/>` : ''
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
-    `<rect width="${w}" height="${h}" fill="${f.bg}"/>`,
-    `<g transform="translate(0 ${HEAD * P}) scale(${P})">${softRegions(px, W, H)}</g>`,
-    cursor, pets.join(''), tags, bubble,
-    `<rect x="0" y="${top}" width="${w}" height="2" fill="${ground}"/>`,
-    `<text x="${2 * P}" y="${top + 13}" font-size="12" font-family="${SVG_FONT}" xml:space="preserve">${hudText}</text>`,
-    '</svg>',
-  ].join('')
-}
-
-/** The pixel title as Raster cells (3 rows, half blocks), centred in `columns`. */
-export function titleCells(columns: number, fg: string, bg: string): string {
-  const rows = pixelTitle(), tw = rows[0]?.length ?? 0
-  const left = Math.max(0, Math.floor((columns - tw) / 2))
-  const on = hex(fg), back = hex(bg)
-  const lit = (x: number, y: number) => y >= 1 && y <= 5 && rows[y - 1]?.[x - left] === '#'
-  const words = new Uint32Array(columns * 3 * 3)
-  for (let r = 0; r < 3; r++) {
-    for (let x = 0; x < columns; x++) {
-      const t = lit(x, r * 2), b = lit(x, r * 2 + 1), i = (r * columns + x) * 3
-      words[i] = t && b ? 0x2588 : t ? 0x2580 : b ? 0x2584 : 0x20
-      words[i + 1] = on
-      words[i + 2] = back
-    }
-  }
-  return b64(new Uint8Array(words.buffer))
-}
-
-/** The pixel title as SVG, for surfaces without a pixel grid. */
-export function titleSvg(fg: string, bg: string, stripes: string[]): string {
-  const rows = pixelTitle(), P = 4, tw = (rows[0]?.length ?? 0) * P, h = 7 * P
-  const w = tw + 2 * P + stripes.length * 3 * P
-  let out = ''
-  rows.forEach((r, y) => {
-    for (let x = 0; x < r.length; x++) if (r[x] === '#') out += `<rect x="${P + x * P}" y="${P + y * P}" width="${P}" height="${P}" fill="${fg}"/>`
-  })
-  stripes.forEach((c, i) => {
-    out += `<rect x="${tw + 2 * P + i * 3 * P}" y="${P}" width="${2 * P}" height="${5 * P}" fill="${c}"/>`
-  })
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" shape-rendering="crispEdges"><rect width="${w}" height="${h}" fill="${bg}"/>${out}</svg>`
-}
-
-/** XP needed grows with the level: LV2 at 15, LV3 at 60, LV4 at 135… */
 export const levelOf = (xp: number) => Math.floor(Math.sqrt(Math.max(0, xp) / 15)) + 1
 
 export function moodOf(limit: number | null): Mood {
@@ -1501,7 +821,7 @@ export function shopText(w: Wallet): string {
     ...ITEM_IDS.filter(id => ITEMS[id].price > 0 || w.owned.includes(id)).map(id => {
       const it = ITEMS[id]
       const mark = w.wearing.includes(id) ? 'WEARING' : w.owned.includes(id) ? 'owned' : `◆${it.price}`
-      return `  ${id.padEnd(10)} ${it.name.padEnd(14)} ${mark}${it.rarity ? ` (${it.rarity}, from a box)` : ''}`
+      return `  ${id.padEnd(11)} ${it.name.padEnd(14)} ${mark}${it.rarity ? ` (${it.rarity}, from a box)` : it.festival ? ` (${FESTIVALS[it.festival as Keepsake].title.toLowerCase()} keepsake)` : ''}`
     }),
     '/pet buy <item> · /pet wear <item> (again to take it off) · /pet wear none',
     `Blind boxes hold items you can't buy here: ${w.boxes} to open · /pet box`,
@@ -1519,6 +839,10 @@ export async function shopCommand($: EngineInterface, verb: 'buy' | 'wear', what
   if (!isItemId(id)) return `No item called "${what}". ${ITEM_IDS.filter(i => !ITEMS[i].isEvent).join(' · ')}`
   const it = ITEMS[id]
   if (it.isEvent) return `The ${it.name.toLowerCase()} comes out by itself on your pet's birthday. /pet birthday`
+  if (it.festival && !(verb === 'wear' && w.owned.includes(id))) {
+    const f = FESTIVALS[it.festival as Keepsake]
+    return `The ${it.name.toLowerCase()} is a ${f.title.toLowerCase()} keepsake: it comes once, during ${f.when}. /pet festivals`
+  }
   if (verb === 'buy') {
     if (it.price <= 0 && !w.owned.includes(id)) return `The ${it.name.toLowerCase()} only comes out of a blind box (${it.rarity}). /pet box`
     if (w.owned.includes(id)) return `You already have the ${it.name.toLowerCase()}. /pet wear ${id}`
@@ -1631,6 +955,7 @@ export function collectionText(w: Wallet): string {
     `COLLECTION · ${found}/${all.length} found · ◆${w.coins} · ${w.boxes} blind box${w.boxes === 1 ? '' : 'es'} to open`,
     ...RARITIES.map(r => `  ${RARITY_TAG[r].padEnd(12)} ${LOOT[r].map(mark).join('  ')}`),
     `  Shop items   ${bought.length ? bought.map(id => `${id}${w.wearing.includes(id) ? '*' : ''}`).join('  ') : 'none yet (/pet shop)'}`,
+    `  Keepsakes    ${KEEPSAKES.map(id => (w.owned.includes(id) ? `✓ ${id}${w.wearing.includes(id) ? '*' : ''}` : `🔒 ${id}`)).join('  ')} (one at each festival)`,
     '* in use · /pet wear <item> · /pet skin <name>|none · /pet <animal> · /pet box open',
   ].join('\n')
 }
@@ -1844,11 +1169,33 @@ async function adoptedOn($: EngineInterface): Promise<string> {
   return first
 }
 
-/** Today's festival and birthday; the birthday's gift the first time it is seen. */
+/** The festivals that give a keepsake (all but your own days). */
+type Keepsake = Exclude<FestivalId, 'custom'>
+/** One keepsake for each festival, given the first time the festival is seen (E13-S02). */
+export const KEEPSAKES = ITEM_IDS.filter(id => ITEMS[id].festival)
+
+async function myFestivals($: EngineInterface): Promise<MyFestival[]> {
+  const v = await $.store.get('myFestivals')
+  return Array.isArray(v) ? (v as MyFestival[]) : []
+}
+
+/** A festival's keepsake, once: into the wallet with a toast. */
+async function giveKeepsake($: EngineInterface, f: Festival) {
+  const id = KEEPSAKES.find(k => ITEMS[k].festival === f.id)
+  if (!id) return
+  const w = await readWallet($)
+  if (w.owned.includes(id)) return
+  await writeWallet($, { ...w, owned: [...w.owned, id] })
+  $.ui.toast(`▶ A ${f.title} KEEPSAKE: ${ITEMS[id].name.toUpperCase()} · /pet wear ${id}`, { timeoutMs: 10_000 })
+  petReact('★', 'warn', 4000, await $.clock.now(), true)
+}
+
+/** Today's festival and birthday; the birthday's gift and the festival's keepsake the first time they are seen. */
 async function refreshCalendar($: EngineInterface) {
   const today = dayOf(await $.clock.now())
   const pick = await $.store.get('festivals')
-  petSim.festival = (typeof pick === 'boolean' ? pick : CFG.festivals) ? festivalOn(today) : null
+  petSim.festival = (typeof pick === 'boolean' ? pick : CFG.festivals) ? festivalOn(today, await myFestivals($)) : null
+  if (petSim.festival) await giveKeepsake($, petSim.festival)
   const age = birthdayAge(await adoptedOn($), today)
   petSim.birthday = age
   if (!age || (await $.store.get('birthdayGift')) === today) return
@@ -1877,15 +1224,38 @@ async function festivalsText($: EngineInterface, arg: string): Promise<string> {
     const isOn = /on/i.test(arg)
     await $.store.set('festivals', isOn)
     await refreshCalendar($)
-    return isOn ? 'Festivals on: lanterns at Tết, mooncakes at Mid-Autumn, a tree at Christmas, fireworks at New Year.' : 'Festivals off.'
+    return isOn ? 'Festivals on: Tết, Mid-Autumn, Christmas, New Year, Valentine\'s Day, Halloween and your own days.' : 'Festivals off.'
+  }
+  const mine = await myFestivals($)
+  const add = /^add\s+(.+)$/i.exec(arg)
+  if (add) {
+    const f = parseMyFestival(add[1]!)
+    if (!f) return 'Give a date and a name: /pet festivals add 11-20 Teachers\' Day (or 2026-11-20 Teachers\' Day).'
+    if (mine.length >= 12) return 'You have 12 days of your own already. /pet festivals remove <name> first.'
+    await $.store.set('myFestivals', [...mine.filter(x => x.date !== f.date), f])
+    await refreshCalendar($)
+    return `Added ${f.title} on ${f.date} every year: confetti in the band that day.`
+  }
+  const remove = /^(remove|rm|delete)\s+(.+)$/i.exec(arg)
+  if (remove) {
+    const what = remove[2]!.trim().toLowerCase()
+    const left = mine.filter(x => x.title.toLowerCase() !== what && x.date !== what)
+    if (left.length === mine.length) return `No day of your own called "${remove[2]!.trim()}". ${mine.map(x => `${x.title} (${x.date})`).join(' · ') || 'You have none.'}`
+    await $.store.set('myFestivals', left)
+    await refreshCalendar($)
+    return `Removed ${mine.filter(x => !left.includes(x)).map(x => x.title).join(', ')}.`
   }
   await refreshCalendar($)
   const today = dayOf(await $.clock.now())
   const now = petSim.festival
+  const w = await readWallet($)
   return [
     now ? `Today: ${now.title}! ${now.line.toLowerCase()}` : 'No festival today.',
-    `Coming up: ${upcomingFestivals(today).map(([t, d]) => `${t} ${d}`).join(' · ')}`,
-    'Tết and Mid-Autumn follow the lunar calendar (worked out for each year). /pet festivals on|off',
+    `Coming up: ${upcomingFestivals(today, mine).map(([t, d]) => `${t} ${d}`).join(' · ')}`,
+    `Your own days: ${mine.length ? mine.map(x => `${x.title} (${x.date})`).join(' · ') : 'none yet'}`,
+    `Keepsakes ${KEEPSAKES.filter(id => w.owned.includes(id)).length}/${KEEPSAKES.length}: one comes the first time you see each festival`,
+    'Tết and Mid-Autumn follow the lunar calendar (worked out for each year).',
+    '/pet festivals on|off · /pet festivals add 11-20 Teachers\' Day · /pet festivals remove <name>',
   ].join('\n')
 }
 
@@ -1955,6 +1325,7 @@ async function maybeChatter($: EngineInterface, durationMs: number, isError: boo
 const LONG_TOOL_MS = 60_000
 const VISIT_MS = 60_000
 const PUSH_RE = /\bgit\s+push\b/
+const COMMIT_RE = /\bgit\s+(-C\s+\S+\s+)?commit\b/
 const CONFLICT_RE = /CONFLICT \(|Automatic merge failed|could not apply [0-9a-f]+|Unmerged paths/
 const SETTLE_RE = /\bgit\s+(commit|status|merge\s+--(continue|abort)|rebase\s+--(continue|abort|skip)|cherry-pick\s+--(continue|abort))\b/
 
@@ -2006,53 +1377,6 @@ export function diarySvg(text: string, pet: { kind: PetKind }, level: number, it
 }
 
 // ── Profile, pet board, streaks and achievements (E3) ───────────────────────
-export type XpReason = 'coin' | 'bug' | 'helper' | 'green' | 'turn' | 'ball' | 'game' | 'visit' | 'focus' | 'other'
-export type Profile = {
-  since: string
-  totals: { xp: number; coins: number; bugs: number; helpers: number; green: number; turns: number; balls: number }
-  byKind: Record<string, number>
-  streak: { days: number; best: number; last: string }
-  badges: string[]
-}
-const COUNTER: Partial<Record<XpReason, keyof Profile['totals']>> = {
-  coin: 'coins', bug: 'bugs', helper: 'helpers', green: 'green', turn: 'turns', ball: 'balls',
-}
-
-export const ACHIEVEMENTS: { id: string; title: string; hint: string; earned: (p: Profile, level: number) => boolean }[] = [
-  { id: 'first-coin', title: 'FIRST COIN', hint: 'collect a coin', earned: p => p.totals.coins >= 1 },
-  { id: 'bug-squasher', title: 'BUG SQUASHER', hint: 'squash 10 bugs', earned: p => p.totals.bugs >= 10 },
-  { id: 'pack-leader', title: 'PACK LEADER', hint: 'welcome 10 helpers home', earned: p => p.totals.helpers >= 10 },
-  { id: 'green-streak', title: 'GREEN STREAK', hint: '5 green test runs', earned: p => p.totals.green >= 5 },
-  { id: 'week-streak', title: "A WEEK'S STREAK", hint: 'play 7 days in a row', earned: p => p.streak.days >= 7 },
-  { id: 'lv5', title: 'LEVEL 5', hint: 'reach LV5', earned: (_p, lv) => lv >= 5 },
-  { id: 'lv10', title: 'LEVEL 10', hint: 'reach LV10', earned: (_p, lv) => lv >= 10 },
-  { id: 'zoo-keeper', title: 'ZOO KEEPER', hint: 'raise 5 different animals', earned: p => Object.keys(p.byKind).length >= 5 },
-]
-
-/** A local calendar date, YYYY-MM-DD. */
-export const dayOf = (ms: number) => {
-  const d = new Date(ms)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-/** One day's play updates the streak: the same day does nothing, the next day adds one, a gap starts over. */
-export function nextStreak(st: Profile['streak'], today: string): Profile['streak'] {
-  if (st.last === today) return st
-  const yesterday = dayOf(Date.parse(`${today}T12:00:00`) - 86_400_000)
-  const days = st.last === yesterday ? st.days + 1 : 1
-  return { days, best: Math.max(st.best, days), last: today }
-}
-
-function freshProfile(today: string): Profile {
-  return {
-    since: today,
-    totals: { xp: 0, coins: 0, bugs: 0, helpers: 0, green: 0, turns: 0, balls: 0 },
-    byKind: {},
-    streak: { days: 0, best: 0, last: '' },
-    badges: [],
-  }
-}
-
 /**
  * Reads the profile. The first time, it starts from the XP the current pet already
  * had, less `pending`: XP just gained that the caller is about to record itself.
@@ -2101,8 +1425,20 @@ async function recordXp($: EngineInterface, n: number, why: XpReason, count: num
     const counter = COUNTER[why]
     if (counter) prof.totals[counter] += why === 'coin' || why === 'bug' ? count : 1
     if (why === 'turn') prof.streak = nextStreak(prof.streak, today)
+    if (why === 'focus') workOf(prof).focus++
   }, n)
-  // achievements unlock once each, with a notice
+  await unlockAchievements($, p, level)
+}
+
+/** Real work (E13-S01): a test run, a commit. Counted in the profile, and it can earn achievements. */
+async function recordWork($: EngineInterface, change: (w: Work) => void) {
+  await loadXp($)
+  const p = await bumpProfile($, prof => change(workOf(prof)))
+  await unlockAchievements($, p, levelOf(petSim.xp))
+}
+
+/** Achievements unlock once each, with a notice and a blind box. */
+async function unlockAchievements($: EngineInterface, p: Profile, level: number) {
   const fresh = ACHIEVEMENTS.filter(a => !p.badges.includes(a.id) && a.earned(p, level))
   if (fresh.length) {
     await bumpProfile($, prof => {
@@ -2149,6 +1485,7 @@ export function boardText(p: Profile, name: string, current: { kind: PetKind; na
     '',
     `Lifetime: ${t.xp} XP · ${t.coins} coins · ${t.bugs} bugs squashed · ${t.helpers} helpers home · ${t.green} green test runs · ${t.turns} turns`,
     `Streak: ${p.streak.days} day${p.streak.days === 1 ? '' : 's'} (best ${p.streak.best})`,
+    ...(p.work ? [`Work: ${p.work.commits} commits · best ${p.work.bestGreenRun} green runs in a row · ${p.work.fixes} red runs turned green · ${p.work.focus} focus rounds`] : []),
     `Achievements ${got.length}/${ACHIEVEMENTS.length}: ${got.map(a => a.title).join(' · ') || 'none yet'}`,
     locked.length ? `Still to earn: ${locked.map(a => `${a.title} (${a.hint})`).join(' · ')}` : 'All achievements earned!',
   ].join('\n')
@@ -2950,7 +2287,8 @@ export const PET_HELP = [
   '  /pet collection            every find, ✓ found or 🔒 not yet · /pet skin <name>|none',
   '  /pet size auto|big|small   the bigger, detailed pet or the small classic one',
   '  /pet breaks [60|off]       a stretch-and-water reminder after an hour of work',
-  '  /pet festivals [on|off]    Tết, Mid-Autumn, Christmas and New Year in the band',
+  '  /pet festivals [on|off]    Tết, Mid-Autumn, Christmas, New Year, Valentine\'s, Halloween',
+  '  /pet festivals add 11-20 Teachers\' Day   a day of your own (remove <name> to drop it)',
   '  /pet birthday              when your pet was adopted; its birthday is a party',
   '  /pet chatter on|off        now and then, a line from your pet (a small model; off by default)',
   '  /pet play [off]            open (or close) the runner game in the band; click it, then space to jump',
@@ -3282,7 +2620,7 @@ export const register: Register = (on, options) => {
       if (mins === null) return { text: 'Usage: /pet breaks 60 (15 to 240 minutes) · /pet breaks off · /pet breaks on' }
       await $.store.set('breaks', mins)
       return { text: mins ? `After ${mins} min of work, your pet will stretch and suggest a break (at most once an hour, never during a turn).` : 'Break reminders off.' }
-    } else if (/^(festivals?|seasons?)(\s+(on|off))?$/i.test(args)) {
+    } else if (/^(festivals?|seasons?)(\s+.*)?$/i.test(args)) {
       return { text: await festivalsText($, args.replace(/^(festivals?|seasons?)\s*/i, '')) }
     } else if (/^(birthday|bday|age)$/i.test(args)) {
       return { text: await birthdayText($) }
@@ -3601,6 +2939,7 @@ export const register: Register = (on, options) => {
       const out = ran.text ?? ''
       if (CONFLICT_RE.test(out)) petSim.isConflict = true
       else if (ok && SETTLE_RE.test(line.detail)) petSim.isConflict = false
+      if (ok && COMMIT_RE.test(line.detail) && !/nothing to commit|no changes added/.test(out)) await recordWork($, w => w.commits++)
       if (ok && PUSH_RE.test(line.detail) && !/\[rejected\]|error:|fatal:/.test(out)) {
         petReact('^', 'warn', 4000, await $.clock.now(), false, { text: 'RIDES A ROCKET: PUSHED!', kind: 'rocket' })
       }
@@ -3611,6 +2950,7 @@ export const register: Register = (on, options) => {
         turnLog.tests = { passed: res.passed, failed: res.failed }
         await update($, tests, () => res)
         await bumpDiary($, d => (res.failed ? d.red++ : d.green++))
+        await recordWork($, w => noteTestRun(w, res.failed))
         if (res.failed) petReact('!', 'fail', 3500, await $.clock.now(), false, { text: `WINCES: ${res.failed} FAILING` })
         else petReact('♪', 'pass', 4000, await $.clock.now(), true, { text: 'DANCES: ALL GREEN!', kind: 'dance' })
         if (res.failed) {
