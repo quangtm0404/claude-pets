@@ -882,3 +882,27 @@ So that the first festival with a keepsake goes well.
 
 </details>
 
+## P8 · Your pet, anywhere - 🟡 In progress
+
+### E16 · Take it with you - 🟡 In progress
+
+**Outcome.** A new computer, a reinstall or a second machine doesn't mean starting over.
+
+<details><summary><b>E16-S01</b> - as a <b>player with more than one computer</b>, I want <b>to move my pet across</b> · ✅ Done · 3 pts</summary>
+
+So that the pet I've raised comes with me (the Mac install started from nothing).
+
+**Acceptance criteria**
+- `/pet backup` gives one line of text, copied to the clipboard: the pet, XP, coins, items, boxes, achievements, days of your own and settings
+- It never holds the leaderboard key or the weather place
+- `/pet restore <code>` puts that pet in play straight away; a code cut short or mistyped is refused and changes nothing
+- `/pet restore undo` puts back what was there before the last restore
+
+| Task | Kind | Status |
+|---|---|---|
+| backup.ts (the code), backup and restore commands, one loader for start and restore | technical | ✅ Done |
+| Round trip with accents, secrets left out, bad codes, restore and undo asserted | testing | ✅ Done |
+| Moved to the Mac for real | testing | ⬜ To do |
+
+</details>
+

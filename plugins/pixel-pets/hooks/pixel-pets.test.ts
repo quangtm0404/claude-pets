@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import {
-  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, festivalNamed, festivalOn, focusLabel, focusXp,
+  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
   midAutumnOf, nextBirthday, noteTestRun, parseBreaks, perfText, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary,
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
@@ -1706,11 +1706,61 @@ test('E15-S02: /pet perf counts the drawing per minute; reset starts again', asy
   const ui = await $.ui.mount(tallBand('terminal') as never)
   expect((await $.command.run(run('pet', 'perf reset'))).text).toBe('Counting the drawing from now: /pet perf in a minute or two.')
   await clock.advance(60_000)
-  const text = (await $.command.run(run('pet', 'perf'))).text
+  const text = (await $.command.run(run('pet', 'perf'))).text ?? ''
   const rate = (label: string) => Number(text.split('\n').find(l => l.endsWith(label))?.trim().split(' ')[0])
   expect(rate('pet beats')).toBeGreaterThan(100)
   expect(rate('strip frames (terminal)')).toBeGreaterThan(0)
   expect(rate('pet pictures sent (desktop app, VS Code)')).toBe(0)
   await ui.unmount()
   expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet perf [reset]')
+})
+
+// ── E16: your pet, anywhere ─────────────────────────────────────────────────
+test('E16-S01: a backup code round-trips, accents and all, and rejects what isn\'t one', () => {
+  const data = { pet: { kind: 'cat', name: 'Mèo Tết' }, petXp: 479, wallet: { coins: 23, owned: ['pumpkin'] }, theme: 'amber' }
+  const code = encodeBackup({ ...data, board: { apiKey: 'secret' } } as never)
+  expect(code.startsWith('PETS1-')).toBe(true)
+  expect(code).toMatch(/^PETS1-[A-Za-z0-9_-]+$/)
+  expect(decodeBackup(code)).toEqual(data)
+  expect(JSON.stringify(decodeBackup(code))).not.toContain('secret')
+  expect(decodeBackup(`  ${code.slice(0, 20)}\n${code.slice(20)}  `)).toEqual(data) // wrapped when pasted
+  expect(decodeBackup(code.slice(0, -5))).toBeNull()
+  expect(decodeBackup('PETS1-!!!')).toBeNull()
+  expect(decodeBackup('hello')).toBeNull()
+  expect(decodeBackup(encodeBackup({ theme: 'ice' }))).toBeNull() // no pet in it
+})
+
+test('E16-S01: /pet backup copies a code; /pet restore puts that pet in play; undo puts back the old one', async ($, on) => {
+  const { store } = timed(on, {
+    pet: { kind: 'whale', name: 'Pixel' }, petXp: 479, wallet: { coins: 23, owned: ['pumpkin'], wearing: ['pumpkin'] },
+    board: { url: 'https://board', login: 'me', apiKey: 'secret' }, weatherPlace: { name: 'Hanoi' },
+  })
+  const copies: string[] = []
+  on('ui.copy', (_$, e) => (copies.push((e as { text: string }).text), { value: { isCopied: true } }) as never)
+  const backup = await $.command.run(run('pet', 'backup'))
+  expect(backup.text).toContain('Backup of Pixel the whale (LV6, 479 XP, 23 coins), copied to the clipboard:')
+  const code = copies[0]!
+  expect(backup.text).toContain(code)
+  expect(decodeBackup(code)).not.toHaveProperty('board')
+  expect(decodeBackup(code)).not.toHaveProperty('weatherPlace')
+
+  // a fresh computer: another pet
+  for (const k of Object.keys(store)) delete store[k]
+  store.pet = { kind: 'crab', name: 'Nip' }
+  store.petXp = 5
+  const restored = await $.command.run(run('pet', `restore ${code}`))
+  expect(restored.text).toBe('Restored Pixel the whale (LV6, 479 XP, 23 coins). /pet restore undo puts back what you had.')
+  expect(store.pet).toEqual({ kind: 'whale', name: 'Pixel' })
+  expect(store.petXp).toBe(479)
+  expect((store.wallet as { coins: number }).coins).toBe(23)
+  expect((await $.command.run(run('pet', 'stats'))).text).toContain('Pixel')
+
+  expect((await $.command.run(run('pet', 'restore PETS1-abc'))).text).toContain('not a whole backup code')
+  expect((await $.command.run(run('pet', 'restore'))).text).toContain('Paste the code')
+  const undo = await $.command.run(run('pet', 'restore undo'))
+  expect(undo.text).toBe('Put back Nip the crab (LV1, 5 XP, 0 coins), as it was before the restore.')
+  expect(store.pet).toEqual({ kind: 'crab', name: 'Nip' })
+  expect(store.petXp).toBe(5)
+  expect((await $.command.run(run('pet', 'restore undo'))).text).toBe('Nothing to undo: no restore has been made here.')
+  expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet backup')
 })

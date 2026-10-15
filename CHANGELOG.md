@@ -2,13 +2,15 @@
 
 ## 1.10.0 — 2026-10-15
 
-Found, and easy to tune ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E11-S03, E14, E15-S01, E15-S02).
+Found, and easy to tune ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E11-S03, E14, E15-S01, E15-S02, E16-S01).
 
 - **`/pet settings`** (E14-S01): every setting on one screen, a button per choice: pet, size, motion, theme, font, sound, break reminders, festivals, chatter and the runner.
 - **`/pet perf`** (E15-S02): how much the pet is drawing, per minute, so you can see what `/pet motion` saves on your computer.
 - **`/pet festivals preview halloween`** (E14-S02): see any festival for 30 seconds, on any day. No keepsake: that still comes on the day.
 - **Lighter on a slow computer.** A pet sitting still is drawn less often, the desktop app and VS Code get at most two pictures a second with no blinking cursor in them, and the terminal strip is only redrawn when it changed. `/pet motion low` (about a frame a second) or `off` (still until something happens) go further.
 - **Fixed: two pets in VS Code.** VS Code now draws the band, so the pet pane no longer opens there by itself; `/pet pane` still opens it.
+- **`/pet backup` and `/pet restore <code>`** (E16-S01): move your pet to another computer with one line of text; `/pet restore undo` takes it back. The leaderboard key and weather place stay behind.
+- Commands typed while `/pet settings` is open now update it too.
 - `docs/LISTING.md`: the plugin directory submission, ready to paste (E15-S01).
 
 ## 1.9.0 — 2026-10-14

@@ -31,7 +31,10 @@ import {
 import type { HudSegment, PetFrame } from './scene'
 import { ACHIEVEMENTS, COUNTER, dayOf, freshProfile, nextStreak, noteTestRun, workOf } from './profile'
 import type { Profile, Work, XpReason } from './profile'
+import { BACKUP_KEYS, decodeBackup, encodeBackup } from './backup'
+import type { Backup } from './backup'
 export { ACHIEVEMENTS, dayOf, nextStreak, noteTestRun } from './profile'
+export { decodeBackup, encodeBackup } from './backup'
 export type { Profile, Work, XpReason } from './profile'
 export { PETS, PET_KINDS, isPetKind, stripRows, petPixels, petCells, SVG_PX, petSvg, titleCells, titleSvg } from './scene'
 export type { HudSegment, Sky, PetFrame } from './scene'
@@ -2407,6 +2410,7 @@ export const PET_HELP = [
   '  /pet motion normal|low|off  less movement, lighter on a slow computer',
   '  /pet settings              every setting on one screen, with buttons',
   '  /pet perf [reset]          how much the pet is drawing, per minute',
+  '  /pet backup · /pet restore <code>|undo   move your pet to another computer',
   '  /pet breaks [60|off]       a stretch-and-water reminder after an hour of work',
   '  /pet festivals [on|off]    Tết, Mid-Autumn, Christmas, New Year, Valentine\'s, Halloween',
   '  /pet festivals add 11-20 Teachers\' Day   a day of your own (remove <name> to drop it)',
@@ -2509,6 +2513,98 @@ async function askPetName($: EngineInterface): Promise<string | undefined> {
   } catch {
     return undefined
   }
+}
+
+/** Puts the saved pet, look and settings into play: at the start, and after a restore. */
+async function applySaved($: EngineInterface) {
+  // a pet saved earlier wins over the settings' starting pet
+  const savedPet = await $.store.get('pet')
+  if (savedPet && typeof savedPet === 'object') {
+    const p = savedPet as { kind?: unknown; name?: unknown }
+    if (isPetKind(p.kind) && typeof p.name === 'string') {
+      const kind: PetKind = p.kind, name = p.name
+      await update($, petState, () => ({ kind, name }))
+    }
+  }
+  const shown = (await $.store.get('petShown')) !== false
+  await update($, petShown, () => shown)
+  const wallet = await readWallet($)
+  petSim.wearing = wallet.wearing
+  petSim.skin = wallet.skin
+  const size = await $.store.get('petSize')
+  if (size === 'big' || size === 'small' || size === 'auto') petSize = size
+  const savedMotion = await $.store.get('motion')
+  if (savedMotion === 'normal' || savedMotion === 'low' || savedMotion === 'off') motion = savedMotion
+  const best = await $.store.get('runnerBest')
+  if (typeof best === 'number') game.best = best
+  const chime = (await $.store.get('chimeOn')) !== false
+  await update($, chimeOn, () => chime)
+  // a theme or font picked with /retro wins over the settings'
+  const savedTheme = await $.store.get('theme')
+  const themeSpec = (typeof savedTheme === 'string' && parseTheme(savedTheme)) || CFG.theme
+  await update($, theme, () => themeSpec)
+  const savedFont = await $.store.get('font')
+  const fontPick: FontName = isFontName(savedFont) ? savedFont : CFG.font
+  await update($, font, () => fontPick)
+  petSim.lastCells = ''
+}
+
+/** Every saved value a backup holds, as it stands now (XP saved first). */
+async function currentSave($: EngineInterface): Promise<Backup> {
+  await saveXp($)
+  const data: Backup = {}
+  for (const k of BACKUP_KEYS) data[k] = await $.store.get(k)
+  if (!data.pet) data.pet = await readPet($)
+  return data
+}
+
+/** One line about a save: who, level, XP and coins. */
+function saveLine(data: Backup): string {
+  const pet = data.pet as { kind: string; name: string }
+  const xp = typeof data.petXp === 'number' ? data.petXp : 0
+  const coins = (data.wallet as { coins?: number } | undefined)?.coins ?? 0
+  return `${pet.name} the ${pet.kind} (LV${levelOf(xp)}, ${xp} XP, ${coins} coins)`
+}
+
+/** /pet backup and /pet restore <code>|undo (E16-S01). */
+async function backupCommand($: EngineInterface, args: string): Promise<string> {
+  if (/^backup$/i.test(args)) {
+    const data = await currentSave($)
+    const code = encodeBackup(data)
+    const copied = await $.ui.copy({ text: code })
+    return [
+      `Backup of ${saveLine(data)}${copied.isCopied ? ', copied to the clipboard' : ''}:`,
+      '',
+      code,
+      '',
+      'On another computer (or after a reinstall): /pet restore <the code>. It holds your pet, XP, coins, items, boxes, achievements, days of your own and settings; not your leaderboard key or weather place.',
+    ].join('\n')
+  }
+  const arg = args.replace(/^restore\s*/i, '')
+  if (!arg) return 'Paste the code from /pet backup: /pet restore PETS1-…'
+  if (/^undo$/i.test(arg)) {
+    const undo = await $.store.get('restoreUndo')
+    if (!undo || typeof undo !== 'object') return 'Nothing to undo: no restore has been made here.'
+    await writeSave($, undo as Backup)
+    await $.store.set('restoreUndo', null)
+    return `Put back ${saveLine(undo as Backup)}, as it was before the restore.`
+  }
+  const data = decodeBackup(arg)
+  if (!data) return 'That is not a whole backup code: it starts with PETS1- and is one long line. Copy it again from /pet backup.'
+  await $.store.set('restoreUndo', await currentSave($))
+  await writeSave($, data)
+  return `Restored ${saveLine(data)}. /pet restore undo puts back what you had.`
+}
+
+/** Writes a save over the current one and puts it into play. */
+async function writeSave($: EngineInterface, data: Backup) {
+  for (const k of BACKUP_KEYS) await $.store.set(k, data[k] ?? null)
+  const xp = typeof data.petXp === 'number' ? data.petXp : 0
+  await loadXp($)
+  petSim.xp = xp
+  petSim.savedXp = xp
+  await applySaved($)
+  await bumpSettings($)
 }
 
 /** /pet: the pet's own command. */
@@ -2702,6 +2798,8 @@ async function petCommand($: EngineInterface, e: { args: string }): Promise<Comm
     await $.store.set('petSize', petSize)
     petSim.lastCells = ''
     return { text: want === 'small' ? 'The small classic pet, always.' : want === 'big' ? 'The bigger, detailed pet, always (it takes two more rows).' : 'Bigger when the band has room, small when it does not.' }
+  } else if (/^(backup|restore(\s+.*)?)$/i.test(args)) {
+    return { text: await backupCommand($, args) }
   } else if (/^perf(\s+reset)?$/i.test(args)) {
     const now = await $.clock.now()
     if (/reset/i.test(args) || !perf.since) Object.assign(perf, { since: now, renders: 0, pictures: 0, blits: 0, beats: 0 })
@@ -2788,26 +2886,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await registerCommands($)
 
-    // a pet saved earlier wins over the settings' starting pet
-    const savedPet = await $.store.get('pet')
-    if (savedPet && typeof savedPet === 'object') {
-      const p = savedPet as { kind?: unknown; name?: unknown }
-      if (isPetKind(p.kind) && typeof p.name === 'string') {
-        const kind: PetKind = p.kind, name = p.name
-        await update($, petState, () => ({ kind, name }))
-      }
-    }
-    if ((await $.store.get('petShown')) === false) await update($, petShown, () => false)
-    const wallet = await readWallet($)
-    petSim.wearing = wallet.wearing
-    petSim.skin = wallet.skin
-    const size = await $.store.get('petSize')
-    if (size === 'big' || size === 'small' || size === 'auto') petSize = size
-    const savedMotion = await $.store.get('motion')
-    if (savedMotion === 'normal' || savedMotion === 'low' || savedMotion === 'off') motion = savedMotion
-    const best = await $.store.get('runnerBest')
-    if (typeof best === 'number') game.best = best
-    if ((await $.store.get('chimeOn')) === false) await update($, chimeOn, () => false)
+    await applySaved($)
     void refreshGit($)
     $.clock.every(10000, () => void refreshGit($))
     if (!perf.since) perf.since = await $.clock.now()
@@ -2816,13 +2895,6 @@ export const register: Register = (on, options) => {
     $.clock.every(1000, () => void refreshFocusText($))
     await refreshCalendar($)
     $.clock.every(60_000, () => void refreshCalendar($))
-    // a theme or font picked with /retro wins over the settings'
-    const savedTheme = await $.store.get('theme')
-    const themeSpec = (typeof savedTheme === 'string' && parseTheme(savedTheme)) || CFG.theme
-    await update($, theme, () => themeSpec)
-    const savedFont = await $.store.get('font')
-    const fontPick: FontName = isFontName(savedFont) ? savedFont : CFG.font
-    await update($, font, () => fontPick)
     if ((await read($, storyId)) === null) {
       const saved = (await storeMap($, 'stories'))[await repoRoot($)]
       let id = typeof saved === 'string' ? saved : null
@@ -2863,9 +2935,17 @@ export const register: Register = (on, options) => {
     return { text: opened.isPlaced ? 'LOAD "QA MONITOR",8,1 … READY.' : 'QA MONITOR waiting for room: widen the terminal.' }
   })
 
-  on('command.run', { command: 'pet' }, ($, e) => petCommand($, e))
+  on('command.run', { command: 'pet' }, async ($, e) => {
+    const res = await petCommand($, e)
+    await bumpSettings($)
+    return res
+  })
 
-  on('command.run', { command: 'retro' }, ($, e) => retroCommand($, e))
+  on('command.run', { command: 'retro' }, async ($, e) => {
+    const res = await retroCommand($, e)
+    await bumpSettings($)
+    return res
+  })
 
 
   on('command.run', { command: 'story' }, async ($, e, next) => {
