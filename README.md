@@ -237,11 +237,11 @@ One install covers every Claude Code app on the machine, since they share `~/.cl
 
 | | Terminal | Desktop app | VS Code |
 |---|---|---|---|
-| The band (usage, weather, story, branch) | ✅ | ✅ | no band there: the pet pane instead |
-| The pixel pet | ✅ drawn in cells | ✅ drawn as SVG | ✅ in the pet pane, as SVG |
+| The band (usage, weather, story, branch) | ✅ | ✅ | ✅ |
+| The pixel pet | ✅ drawn in cells | ✅ drawn as SVG | ✅ drawn as SVG |
 | Commands, sounds, weather, boards, guardrails | ✅ | ✅ | ✅ |
 
-In VS Code the pet pane opens by itself when the pet is shown; `/pet pane` opens it anywhere, with BALL and PAT buttons, usage and weather.
+`/pet pane` opens a pet pane anywhere, with BALL and PAT buttons, usage and weather.
 
 ## Privacy
 Everything stays local: the backlog files, git and the transcript are read on your machine, and state (your pet, profile and place) is kept in Claude Code's own plugin storage. The exceptions, each only when you use it:

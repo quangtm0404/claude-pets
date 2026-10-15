@@ -2429,8 +2429,6 @@ export const register: Register = (on, options) => {
     const savedFont = await $.store.get('font')
     const fontPick: FontName = isFontName(savedFont) ? savedFont : CFG.font
     await update($, font, () => fontPick)
-    // VS Code draws no band: the pet gets a pane of its own there (E5-S02)
-    if ((await $.session.surfaces()).includes('vscode') && (await read($, petShown))) void openPetPane($)
     if ((await read($, storyId)) === null) {
       const saved = (await storeMap($, 'stories'))[await repoRoot($)]
       let id = typeof saved === 'string' ? saved : null
@@ -2677,7 +2675,6 @@ export const register: Register = (on, options) => {
       const shown = await update($, petShown, v => !v)
       await $.store.set('petShown', shown)
       const pet = await readPet($)
-      if (shown && (await $.session.surfaces()).includes('vscode')) await openPetPane($)
       if (!shown) await $.ui.close({ id: PET_PANE })
       return {
         text: shown ? `${pet.name} the ${pet.kind} joins the band. READY.` : `${pet.name} is resting. /pet brings them back.`,
@@ -3197,13 +3194,6 @@ export const register: Register = (on, options) => {
   on('ui.close', async ($, e, next) => {
     if (e.id === PET_PANE) petSim.remote.pane = false
     return next(e)
-  })
-
-  // VS Code attaching to a running session gets the pet pane too
-  on('session.attach', async ($, e, next) => {
-    const r = await next(e)
-    if (e.surface === 'vscode' && (await read($, petShown))) void openPetPane($)
-    return r
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

@@ -161,7 +161,7 @@ test('before any reading the band says so', async ($, on) => {
   await ui.unmount()
 })
 
-const tallBand = (surface: 'terminal' | 'desktop') => ({
+const tallBand = (surface: 'terminal' | 'desktop' | 'vscode') => ({
   plugin: 'pixel-pets', surface, component: 'AbovePrompt' as const,
   props: { ...band(100).props, maxRows: 14 },
 })
@@ -794,14 +794,17 @@ test('E5-S02: VS Code gets a pet pane: opened by /pet pane, drawn as SVG with bu
   await term.unmount()
 })
 
-test('E5-S02: in a VS Code session, /pet shows the pet by opening its pane', async ($, on) => {
+test('E5-S02: VS Code draws the pet in the band, so no pane opens by itself', async ($, on) => {
   engine(on, '')
   on('session.surfaces', () => ({ value: ['vscode'] }) as never)
   const opened: string[] = []
   on('ui.open', (_$, e) => (opened.push(e.id), { value: { isPlaced: true } }) as never)
   await $.command.run(run('pet', '')) // hides
   await $.command.run(run('pet', '')) // shows again
-  expect(opened).toContain('pet')
+  expect(opened).not.toContain('pet')
+  const vs = await $.ui.mount(tallBand('vscode') as never)
+  expect(await vs.find({ type: 'Svg' })).toBeDefined()
+  await vs.unmount()
 })
 
 test('E5-S03: /retro theme takes presets and your own colours; a bad colour shows help', async ($, on) => {
