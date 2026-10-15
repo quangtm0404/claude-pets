@@ -689,6 +689,23 @@ So that each feature has a place, and the next one is cheaper to add.
 
 </details>
 
+<details><summary><b>E11-S03</b> - as a <b>user on a slow computer</b>, I want <b>the pet to cost little to draw</b> · ✅ Done · 2 pts</summary>
+
+So that typing and scrolling stay smooth with the pet on screen.
+
+**Acceptance criteria**
+- A pet sitting still is drawn less often; the terminal strip is redrawn only when it changed
+- The desktop app and VS Code get at most two pictures a second, with no blinking cursor in them
+- `/pet motion normal|low|off`: low is about a frame a second, off sits the pet still until something happens; the choice is kept
+- In VS Code the pet shows once, in the band: the pet pane no longer opens by itself (`/pet pane` still opens it)
+
+| Task | Kind | Status |
+|---|---|---|
+| Paced timer, skipped redraws, the motion setting | technical | ✅ Done |
+| Frames counted with a mock clock, terminal and VS Code | testing | ✅ Done |
+
+</details>
+
 ### E12 · Show it off - 🟡 In progress
 
 **Outcome.** Someone landing on the repo sees what Claude Pets is in a few seconds, and can find it where plugins are listed.
