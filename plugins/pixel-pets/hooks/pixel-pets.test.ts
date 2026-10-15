@@ -6,6 +6,7 @@ import {
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
 import { press, step } from './runner'
+import { fromBase64 } from './backup'
 
 const run = (command: string, args: string) => ({
   command,
@@ -1763,4 +1764,49 @@ test('E16-S01: /pet backup copies a code; /pet restore puts that pet in play; un
   expect(store.petXp).toBe(5)
   expect((await $.command.run(run('pet', 'restore undo'))).text).toBe('Nothing to undo: no restore has been made here.')
   expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet backup')
+})
+
+// ── E15-S03: Halloween, the day itself ──────────────────────────────────────
+/** The colours in a strip the terminal was sent (cells: code point, fg, bg, as base64). */
+function cellColours(cells: string): Set<number> {
+  const bytes = fromBase64(cells.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')) ?? []
+  const out = new Set<number>()
+  for (let i = 0; i + 11 < bytes.length; i += 12) {
+    for (const at of [i + 4, i + 8]) out.add(bytes[at]! | (bytes[at + 1]! << 8) | (bytes[at + 2]! << 16))
+  }
+  return out
+}
+
+test('E15-S03: on 29 October both the terminal and VS Code show pumpkins and the bat, and the pumpkin hat comes once', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('session.surfaces', () => ({ value: ['terminal', 'vscode'] }) as never)
+  on('ui.log', () => ({ value: undefined }) as never)
+  const blits: string[] = []
+  on('ui.blit', (_$, e) => (blits.push((e as { cells: string }).cells), { value: {} }) as never)
+  on('http.fetch', () => ({ value: { status: 500, ok: false, headers: {}, text: '' } }) as never)
+  const { store, toasts, clock } = timed(on, {}, Date.parse('2026-10-29T09:00:00'))
+  await $.session.start(START)
+  expect(toasts).toContain('▶ A HALLOWEEN KEEPSAKE: PUMPKIN HAT · /pet wear pumpkin')
+
+  const term = await $.ui.mount(tallBand('terminal') as never)
+  const vs = await $.ui.mount(tallBand('vscode') as never)
+  await clock.advance(3000)
+  const colours = cellColours(blits[blits.length - 1] ?? '')
+  expect(colours.has(0xfb8c00)).toBe(true) // pumpkins
+  const svg = String((await vs.find({ type: 'Svg' }))?.props.source)
+  expect(svg).toContain('#fb8c00')
+  // the bat flaps above: purple somewhere in the last few frames
+  let sawBat = svg.includes('#9575cd')
+  for (let i = 0; i < 6 && !sawBat; i++) {
+    await clock.advance(600)
+    sawBat = String((await vs.find({ type: 'Svg' }))?.props.source).includes('#9575cd')
+  }
+  expect(sawBat).toBe(true)
+
+  expect((await $.command.run(run('pet', 'wear pumpkin'))).text).toBe('Wearing the pumpkin hat.')
+  await clock.advance(60_000) // the calendar looks again: no second hat
+  expect(toasts.filter(t => t.includes('KEEPSAKE'))).toHaveLength(1)
+  expect((store.wallet as { owned: string[] }).owned.filter(id => id === 'pumpkin')).toHaveLength(1)
+  await term.unmount()
+  await vs.unmount()
 })

@@ -867,7 +867,7 @@ So that I know the motion setting helped.
 
 </details>
 
-<details><summary><b>E15-S03</b> - as a <b>player</b>, I want <b>Halloween to look right on the day</b> · ⬜ To do · 1 pts</summary>
+<details><summary><b>E15-S03</b> - as a <b>player</b>, I want <b>Halloween to look right on the day</b> · 🟡 In progress · 1 pts</summary>
 
 So that the first festival with a keepsake goes well.
 
@@ -878,6 +878,7 @@ So that the first festival with a keepsake goes well.
 | Task | Kind | Status |
 |---|---|---|
 | Preview checked in tests | testing | ✅ Done |
+| The day itself on a mock clock: pumpkins in the terminal strip and the VS Code picture, the bat, the hat given once | testing | ✅ Done |
 | Seen on the day | testing | ⬜ To do |
 
 </details>
