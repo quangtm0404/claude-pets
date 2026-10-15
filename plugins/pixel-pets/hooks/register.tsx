@@ -1,13 +1,13 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { PluginOptions, RenderChildren, SessionUsage } from 'claude-code'
+import type { CommandRunResult, PluginOptions, RenderChildren, SessionUsage } from 'claude-code'
 import type { RunnerProps } from './runner'
 import {
   ANGRY_EYE, BABY_W, BOX_PETS, HD_W, ITEMS, ITEM_IDS, KID_W, SKINS, SKIN_IDS, SPRITE_W, babySprite, isItemId, isSkinId, nextStage, stageOf, vectorPet,
 } from './art'
 import type { ItemId, Mood, Pose, Rarity, SkinId } from './art'
-import { FESTIVALS, birthdayAge, daysBetween, festivalOn, nextBirthday, parseMyFestival, upcomingFestivals } from './seasons'
+import { FESTIVALS, FESTIVAL_NAMES, birthdayAge, daysBetween, festivalOn, nextBirthday, parseMyFestival, upcomingFestivals } from './seasons'
 import type { Festival, FestivalId, MyFestival } from './seasons'
 
 export { ITEMS, babySprite, extrasFor, sprite, stageOf } from './art'
@@ -186,6 +186,8 @@ export function parseBreaks(v: string): number | null {
 const PANE = 'qa-monitor'
 /** The pet's own pane, for surfaces that draw no band (VS Code, phones) (E5-S02). */
 const PET_PANE = 'pet'
+/** Every setting in one place, with buttons (P7). */
+const SETTINGS_PANE = 'pet-settings'
 
 const ticket = atom({ plugin: 'pixel-pets', key: 'ticket' } as const, null)
 const env = atom({ plugin: 'pixel-pets', key: 'env' } as const, null)
@@ -195,6 +197,7 @@ const tests = atom({ plugin: 'pixel-pets', key: 'tests' } as const, null)
 const log = atom({ plugin: 'pixel-pets', key: 'log' } as const, [])
 const isBandHidden = atom({ plugin: 'pixel-pets', key: 'isBandHidden' } as const, false)
 const blink = atom({ plugin: 'pixel-pets', key: 'blink' } as const, true)
+const settingsRev = atom({ plugin: 'pixel-pets', key: 'settingsRev' } as const, 0)
 const theme = atom({ plugin: 'pixel-pets', key: 'theme' } as const, '')
 const font = atom({ plugin: 'pixel-pets', key: 'font' } as const, 'plain')
 /** The pet drawn as SVG for the desktop app, VS Code and phones, redrawn as it moves (E5-S01). */
@@ -1202,14 +1205,22 @@ async function giveKeepsake($: EngineInterface, f: Festival) {
 }
 
 /** Today's festival and birthday; the birthday's gift and the festival's keepsake the first time they are seen. */
-async function refreshCalendar($: EngineInterface) {
-  const today = dayOf(await $.clock.now())
+/** A festival shown for a little while on any day, to see what it looks like (P7); it gives no keepsake. */
+let festivalPreview: null | { festival: Festival; until: number } = null
+const PREVIEW_MS = 30_000
+
+/** Today's festival and birthday; returns the real festival, while a preview may be what is shown. */
+async function refreshCalendar($: EngineInterface): Promise<Festival | null> {
+  const now = await $.clock.now()
+  const today = dayOf(now)
   const pick = await $.store.get('festivals')
-  petSim.festival = (typeof pick === 'boolean' ? pick : CFG.festivals) ? festivalOn(today, await myFestivals($)) : null
-  if (petSim.festival) await giveKeepsake($, petSim.festival)
+  const real = (typeof pick === 'boolean' ? pick : CFG.festivals) ? festivalOn(today, await myFestivals($)) : null
+  if (festivalPreview && now >= festivalPreview.until) festivalPreview = null
+  petSim.festival = festivalPreview?.festival ?? real
+  if (real) await giveKeepsake($, real)
   const age = birthdayAge(await adoptedOn($), today)
   petSim.birthday = age
-  if (!age || (await $.store.get('birthdayGift')) === today) return
+  if (!age || (await $.store.get('birthdayGift')) === today) return real
   await $.store.set('birthdayGift', today)
   const pet = await readPet($)
   petReact('♥', 'fail', 8000, await $.clock.now(), true, { text: `TURNS ${age} TODAY · HAPPY BIRTHDAY!` })
@@ -1217,6 +1228,17 @@ async function refreshCalendar($: EngineInterface) {
   await gainXp($, BIRTHDAY_XP, 'other')
   await saveXp($)
   void petVoice($)
+  return real
+}
+
+/** The festival called `name` (an id or its title), for a preview. */
+export function festivalNamed(name: string, year: number): Festival | null {
+  const key = name.toLowerCase().replace(/[^a-z]/g, '')
+  const alias: Record<string, Exclude<FestivalId, 'custom'>> = { xmas: 'christmas', lunarnewyear: 'tet', moon: 'midautumn', valentines: 'valentine' }
+  const id = alias[key] ?? (Object.keys(FESTIVALS) as Exclude<FestivalId, 'custom'>[]).find(k => k === key || FESTIVALS[k].title.toLowerCase().replace(/[^a-z]/g, '') === key)
+  if (id) return { id, title: FESTIVALS[id].title, line: FESTIVALS[id].line(year) }
+  if (key === 'custom' || key === 'confetti') return { id: 'custom', title: 'YOUR DAY', line: 'CELEBRATES YOUR DAY!' }
+  return null
 }
 
 async function birthdayText($: EngineInterface): Promise<string> {
@@ -1235,7 +1257,18 @@ async function festivalsText($: EngineInterface, arg: string): Promise<string> {
     const isOn = /on/i.test(arg)
     await $.store.set('festivals', isOn)
     await refreshCalendar($)
+    await bumpSettings($)
     return isOn ? 'Festivals on: Tết, Mid-Autumn, Christmas, New Year, Valentine\'s Day, Halloween and your own days.' : 'Festivals off.'
+  }
+  const preview = /^(preview|try|show)(?:\s+(.+))?$/i.exec(arg)
+  if (preview) {
+    const now = await $.clock.now()
+    const f = festivalNamed(preview[2] ?? '', Number(dayOf(now).slice(0, 4)))
+    if (!f) return `Which one? /pet festivals preview ${[...Object.keys(FESTIVALS), 'custom'].join('|')}`
+    festivalPreview = { festival: f, until: now + PREVIEW_MS }
+    petSim.festival = f
+    const pet = await readPet($)
+    return `${pet.name} tries out ${f.id === 'custom' ? 'a day of your own' : FESTIVAL_NAMES[f.id]} for 30 seconds. The keepsake still comes only on the day.`
   }
   const mine = await myFestivals($)
   const add = /^add\s+(.+)$/i.exec(arg)
@@ -1256,9 +1289,8 @@ async function festivalsText($: EngineInterface, arg: string): Promise<string> {
     await refreshCalendar($)
     return `Removed ${mine.filter(x => !left.includes(x)).map(x => x.title).join(', ')}.`
   }
-  await refreshCalendar($)
+  const now = await refreshCalendar($)
   const today = dayOf(await $.clock.now())
-  const now = petSim.festival
   const w = await readWallet($)
   return [
     now ? `Today: ${now.title}! ${now.line.toLowerCase()}` : 'No festival today.',
@@ -1266,7 +1298,7 @@ async function festivalsText($: EngineInterface, arg: string): Promise<string> {
     `Your own days: ${mine.length ? mine.map(x => `${x.title} (${x.date})`).join(' · ') : 'none yet'}`,
     `Keepsakes ${KEEPSAKES.filter(id => w.owned.includes(id)).length}/${KEEPSAKES.length}: one comes the first time you see each festival`,
     'Tết and Mid-Autumn follow the lunar calendar (worked out for each year).',
-    '/pet festivals on|off · /pet festivals add 11-20 Teachers\' Day · /pet festivals remove <name>',
+    '/pet festivals on|off · /pet festivals add 11-20 Teachers\' Day · /pet festivals remove <name> · /pet festivals preview halloween',
   ].join('\n')
 }
 
@@ -1654,6 +1686,36 @@ async function setLimit($: EngineInterface, u: Usage) {
   }
 }
 
+/** Redraws the settings pane after a change. */
+async function bumpSettings($: EngineInterface) {
+  await update($, settingsRev, n => n + 1)
+}
+
+/** One row of the settings pane: what it is, and a button per choice, the current one marked. */
+type SettingRow = { label: string; key: string; value: string; choices: { label: string; args: string; command?: 'pet' | 'retro' }[] }
+
+/** Every setting as it stands now (P7): what /pet settings shows. */
+async function settingRows($: EngineInterface): Promise<SettingRow[]> {
+  const get = (key: string) => $.store.get(key)
+  const [shown, chime, breaks, fest, chat, auto] = await Promise.all([
+    read($, petShown), read($, chimeOn), breakMinutes($), get('festivals'), get('chatter'), get('runnerAuto'),
+  ])
+  const onOff = (isOn: boolean, args: (v: 'on' | 'off') => string, command: 'pet' | 'retro' = 'pet') => ({
+    value: isOn ? 'ON' : 'OFF',
+    choices: (['on', 'off'] as const).map(v => ({ label: v.toUpperCase(), args: args(v), command })),
+  })
+  return [
+    { label: 'PET', key: 'shown', value: shown ? 'ON' : 'OFF', choices: [{ label: shown ? 'REST' : 'SHOW', args: '' }] },
+    { label: 'SIZE', key: 'size', value: petSize.toUpperCase(), choices: (['auto', 'big', 'small'] as const).map(v => ({ label: v.toUpperCase(), args: `size ${v}` })) },
+    { label: 'MOTION', key: 'motion', value: motion.toUpperCase(), choices: (['normal', 'low', 'off'] as const).map(v => ({ label: v.toUpperCase(), args: `motion ${v}` })) },
+    { label: 'SOUND', key: 'sound', ...onOff(chime, v => `sound ${v}`, 'retro') },
+    { label: 'BREAKS', key: 'breaks', value: breaks ? `${breaks} MIN` : 'OFF', choices: [{ label: '30', args: 'breaks 30' }, { label: '60', args: 'breaks 60' }, { label: 'OFF', args: 'breaks off' }] },
+    { label: 'FESTIVALS', key: 'festivals', ...onOff(typeof fest === 'boolean' ? fest : CFG.festivals, v => `festivals ${v}`) },
+    { label: 'CHATTER', key: 'chatter', ...onOff(chat === true, v => `chatter ${v}`) },
+    { label: 'RUNNER BY ITSELF', key: 'runner', ...onOff(auto === true, v => (v === 'on' ? 'play auto' : 'play auto off')) },
+  ]
+}
+
 async function openPetPane($: EngineInterface) {
   const pet = await readPet($)
   return $.ui.open({ id: PET_PANE, title: `CLAUDE PETS · ${pet.name.toUpperCase()}` })
@@ -1715,6 +1777,7 @@ async function petTick($: EngineInterface) {
   const stride = motion === 'off' ? 8 : motion === 'low' ? 4 : s.isStill ? 3 : 1
   if (s.beat % stride !== 0) return
   const now = await $.clock.now()
+  if (festivalPreview && now >= festivalPreview.until) await refreshCalendar($)
   if (s.lastActive === 0) s.lastActive = now
   await loadXp($)
   const [pet, themeName] = await Promise.all([readPet($), read($, theme)])
@@ -2319,6 +2382,7 @@ export const PET_HELP = [
   '  /pet collection            every find, ✓ found or 🔒 not yet · /pet skin <name>|none',
   '  /pet size auto|big|small   the bigger, detailed pet or the small classic one',
   '  /pet motion normal|low|off  less movement, lighter on a slow computer',
+  '  /pet settings              every setting on one screen, with buttons',
   '  /pet breaks [60|off]       a stretch-and-water reminder after an hour of work',
   '  /pet festivals [on|off]    Tết, Mid-Autumn, Christmas, New Year, Valentine\'s, Halloween',
   '  /pet festivals add 11-20 Teachers\' Day   a day of your own (remove <name> to drop it)',
@@ -2423,6 +2487,272 @@ async function askPetName($: EngineInterface): Promise<string | undefined> {
   }
 }
 
+/** /pet: the pet's own command. */
+async function petCommand($: EngineInterface, e: { args: string }): Promise<CommandRunResult> {
+  const args = e.args.trim()
+  const kind = args.toLowerCase()
+  let named = /^name\s+(.{1,16})$/i.exec(args)?.[1]?.trim()
+  if (/^name$/i.test(args)) named = await askPetName($)
+  if (/^name$/i.test(args) && !named) return { text: 'Kept the name.' }
+  if (/^(list|pets|animals)$/i.test(args)) {
+    const w = await readWallet($)
+    const locked = (k: PetKind) => BOX_PETS.includes(k) && !w.pets.includes(k)
+    return { text: `Pets: ${PET_KINDS.map(k => (locked(k) ? `🔒 ${k}` : `${PETS[k].emoji} ${k}`)).join(' · ')}\nSwitch with /pet <animal>; your XP and name stay. 🔒 animals hatch from blind boxes (/pet box).` }
+  }
+  if (isPetKind(kind)) {
+    const k: PetKind = kind
+    if (BOX_PETS.includes(k) && !(await readWallet($)).pets.includes(k)) {
+      return { text: `The ${k} only hatches from a blind box (✦ legendary). /pet box` }
+    }
+    const pet = await update($, petState, p => ({ ...(p.name ? p : { kind: CFG.petKind, name: CFG.petName }), kind: k }))
+    await $.store.set('pet', pet)
+  } else if (named) {
+    const pet = await update($, petState, p => ({ ...(p.name ? p : { kind: CFG.petKind, name: CFG.petName }), name: named }))
+    await $.store.set('pet', pet)
+  } else if (/^ball$/i.test(args)) {
+    await throwBall($)
+  } else if (/^pat$/i.test(args)) {
+    await patPet($)
+  } else if (/^join$/i.test(args)) {
+    if (!boardReady()) return { text: NOT_SET_UP }
+    const link = await readLink($)
+    if (link) return { text: `Already on the board as ${link.login}. /pet board world shows it; /pet leave removes you.` }
+    if (boardSync.isJoining) return { text: 'Already waiting for you to approve the code at github.com/login/device.' }
+    const r = await $.http.fetch('https://github.com/login/device/code', {
+      method: 'POST',
+      headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+      body: `client_id=${encodeURIComponent(CFG.githubClientId)}&scope=`,
+    }).catch(() => null)
+    if (!r || !r.ok) return { text: `Could not reach GitHub to start the sign-in${r ? ` (${r.status})` : ''}.` }
+    const flow = JSON.parse(r.text) as DeviceCode
+    boardSync.isJoining = true
+    const now = await $.clock.now()
+    $.clock.after(flow.interval * 1000, () => void pollDevice($, flow, now + flow.expires_in * 1000, flow.interval * 1000))
+    return {
+      text: [
+        `Open ${flow.verification_uri} and enter: ${flow.user_code}`,
+        'GitHub will ask to share your public profile only (no scopes). Claude Pets finishes joining once you approve, and keeps only the board\'s own key, never your GitHub token.',
+        'Shared: your GitHub login, level, XP, favourite pet and streak. /pet leave deletes it all.',
+      ].join('\n'),
+    }
+  } else if (/^leave$/i.test(args)) {
+    const link = await readLink($)
+    if (!link) return { text: 'You are not on the shared board.' }
+    const r = await $.http.fetch(`${link.url}/v1/me`, { method: 'DELETE', headers: { authorization: `Bearer ${link.apiKey}` } }).catch(() => null)
+    await $.store.set('board', null)
+    return {
+      text: r && (r.status === 204 || r.status === 401)
+        ? `Left the board: ${link.login}'s entry is deleted, and nothing more will be sent.`
+        : 'Forgot the board key here, but could not reach the board to delete your entry; /pet join and /pet leave again later to remove it.',
+    }
+  } else if (/^board\s+world$/i.test(args)) {
+    const link = await readLink($)
+    const url = link?.url ?? CFG.leaderboardUrl
+    if (!url) return { text: NOT_SET_UP }
+    const r = await $.http.fetch(`${url}/v1/board?limit=20`, link ? { headers: { authorization: `Bearer ${link.apiKey}` } } : undefined).catch(() => null)
+    if (!r || !r.ok) return { text: `Could not reach the board${r ? ` (${r.status})` : ''}.` }
+    const d = JSON.parse(r.text) as { top: WorldRow[]; me: WorldRow | null }
+    return { text: worldText(d.top, d.me, link?.login ?? null) }
+  } else if (/^(board|leaderboard|profile)$/i.test(args)) {
+    return { text: boardText(await readProfile($), await playerName($), await readPet($)) }
+  } else if (/^(stats|status|xp)$/i.test(args)) {
+    await loadXp($)
+    const pet = await readPet($)
+    const lv = levelOf(petSim.xp)
+    const nextAt = 15 * lv * lv
+    return {
+      text: [
+        `${pet.name} the ${pet.kind} · LV${lv} · XP ${petSim.xp} (LV${lv + 1} at ${nextAt})`,
+        `Adopted ${await adoptedOn($)}${petSim.birthday ? ` · 🎂 ${petSim.birthday} TODAY` : ''}`,
+        `Stage: ${stageOf(lv).toUpperCase()}${nextStage(lv) ? ` (${nextStage(lv)!.stage.toUpperCase()} at LV${nextStage(lv)!.at})` : ' (fully grown)'}${petSim.wearing.length ? ` · wearing: ${petSim.wearing.map(i => ITEMS[i].name.toLowerCase()).join(', ')}` : ''}`,
+        ...(await nowLine($)),
+        `Mood: ${petSim.mood.toUpperCase()}${petSim.limitLabel ? ` (${petSim.limitLabel}${petSim.resetText ? `, resets in ${petSim.resetText}` : ''})` : ''}`,
+        `This session: ◆${petSim.collected} coins · ${petSim.bugs.length} bug(s) loose`,
+        `Helpers: ${petSim.kids.filter(k => k.state === 'work').length} out working${petSim.kids.length ? ` (${petSim.kids.map(k => `#${k.n} ${k.label || 'subagent'}: ${k.xp} XP`).join(', ')})` : ''} · ${petSim.kidsHome} came home (+${petSim.kidXp} XP)`,
+        'XP: +1 coin (a tool call that worked) · +5 bug squashed (an error) · +10 green test run · +2 per turn · +2 ball · runner: +1 a bug jumped, up to 20 a turn · helpers: +1 per subagent call that worked, +5 when its job is done',
+      ].join('\n'),
+    }
+  } else if (/^card$/i.test(args)) {
+    const link = await readLink($)
+    if (!link) return { text: 'The badge is for players on the world board: /pet join first.' }
+    const md = `[![${link.login}'s Claude Pet](${link.url}/card/${link.login}.svg)](https://github.com/quangtm0404/claude-pets)`
+    const copied = await $.ui.copy({ text: md })
+    return { text: `Your live badge, for a GitHub README (it updates as you play):\n\n${md}\n\n${copied.isCopied ? '(copied to the clipboard)' : '(copy it from here)'}` }
+  } else if (/^visit\s+\S+$/i.test(args)) {
+    const link = await readLink($)
+    if (!link) return { text: 'Visits are for players on the world board: /pet join first.' }
+    const who = args.replace(/^visit\s+@?/i, '')
+    const r = await $.http.fetch(`${link.url}/v1/pet/${encodeURIComponent(who)}`, { headers: { authorization: `Bearer ${link.apiKey}` } }).catch(() => null)
+    if (!r) return { text: 'Could not reach the board.' }
+    const d = JSON.parse(r.text || '{}') as { login?: string; level?: number; favPet?: string; wearing?: string[]; isFirstToday?: boolean; error?: string }
+    if (!r.ok || !d.login || !isPetKind(d.favPet)) return { text: d.error ? `${d.error}.` : `Could not visit ${who} (${r.status}).` }
+    const now = await $.clock.now()
+    petSim.guest = {
+      login: d.login, kind: d.favPet, level: d.level ?? 1, wearing: (d.wearing ?? []).filter(isItemId),
+      x: Math.max(0, petSim.columns - petW() - 1), dir: -1, pose: 'walkA', until: now + VISIT_MS,
+    }
+    if (d.isFirstToday) await gainXp($, 5, 'visit')
+    return { text: `${d.login}'s ${d.favPet} (LV${d.level}) comes to play for a minute.${d.isFirstToday ? ' +5 XP for you both, once a day.' : ''}` }
+  } else if (/^visits\s+(on|off)$/i.test(args)) {
+    const link = await readLink($)
+    if (!link) return { text: 'Visits are for players on the world board: /pet join first.' }
+    const isOff = /off$/i.test(args)
+    const r = await $.http.fetch(`${link.url}/v1/me`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${link.apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ visitsOff: isOff }),
+    }).catch(() => null)
+    if (!r?.ok) return { text: 'Could not reach the board.' }
+    return { text: isOff ? 'Visits off: nobody can bring their pet to yours.' : 'Visits on: friends can /pet visit you.' }
+  } else if (/^diary(\s+card)?$/i.test(args)) {
+    const [d, pet, wx, themeName] = await Promise.all([readDiary($), readPet($), read($, weather), read($, theme)])
+    const text = diaryText(d, pet, wx, CFG.temperatureUnit)
+    if (!/card$/i.test(args)) return { text: `${text}\n\n/pet diary card copies it as an SVG picture to share.` }
+    await loadXp($)
+    const copied = await $.ui.copy({ text: diarySvg(text, pet, levelOf(petSim.xp), petSim.wearing, paletteOf(themeName), petSim.skin) })
+    return { text: copied.isCopied ? 'Copied the diary card as SVG: paste it into a file named diary.svg to share it.' : 'Could not copy the card here.' }
+  } else if (/^(play|game)(\s+(on|off|stop|auto|auto\s+off))?$/i.test(args)) {
+    const opt = args.replace(/^(play|game)\s*/i, '').toLowerCase().replace(/\s+/g, ' ')
+    if (opt === 'auto' || opt === 'auto off') {
+      await $.store.set('runnerAuto', opt === 'auto')
+      return { text: opt === 'auto' ? 'The runner will open by itself once Claude has worked 8 s. /pet play auto off stops that.' : 'The runner opens only when you ask: /pet play.' }
+    }
+    if (opt === 'off' || opt === 'stop') {
+      await closeRunner($)
+      return { text: 'Runner closed.' }
+    }
+    game.timer?.cancel()
+    game.isManual = true
+    await update($, runnerOn, () => true)
+    return { text: 'The runner is in the band: click it, then space to jump the bugs. /pet play off closes it.' }
+  } else if (/^focus\b/i.test(args)) {
+    return { text: await focusCommand($, args.replace(/^focus\s*/i, '')) }
+  } else if (/^breaks?(\s+\S+)?$/i.test(args)) {
+    const opt = args.replace(/^breaks?\s*/i, '')
+    if (!opt) {
+      const mins = await breakMinutes($)
+      return { text: mins ? `Break reminders: after ${mins} min of work (at most once an hour, never during a turn). /pet breaks <minutes>|off` : 'Break reminders are off. /pet breaks on (60 min) or /pet breaks <minutes>' }
+    }
+    const mins = parseBreaks(opt)
+    if (mins === null) return { text: 'Usage: /pet breaks 60 (15 to 240 minutes) · /pet breaks off · /pet breaks on' }
+    await $.store.set('breaks', mins)
+    return { text: mins ? `After ${mins} min of work, your pet will stretch and suggest a break (at most once an hour, never during a turn).` : 'Break reminders off.' }
+  } else if (/^(festivals?|seasons?)(\s+.*)?$/i.test(args)) {
+    return { text: await festivalsText($, args.replace(/^(festivals?|seasons?)\s*/i, '')) }
+  } else if (/^(birthday|bday|age)$/i.test(args)) {
+    return { text: await birthdayText($) }
+  } else if (/^chatter(\s+(on|off))?$/i.test(args)) {
+    const opt = args.replace(/^chatter\s*/i, '').toLowerCase()
+    const pet = await readPet($)
+    if (opt) await $.store.set('chatter', opt === 'on')
+    const isOn = (await $.store.get('chatter')) === true
+    return {
+      text: isOn
+        ? [
+          `Chatter on: after a turn, at most once every ${CHATTER_EVERY_MS / 60_000} minutes, ${pet.name} says a line in the band.`,
+          'A small model (haiku) writes it from a short summary made here: how long the turn took and how many edits, commands and tests ran.',
+          'Never your files, paths, commands, prompts or answers, and the line never goes into the conversation. A few hundred tokens each. /pet chatter off',
+        ].join('\n')
+        : `Chatter off: ${pet.name} keeps quiet. /pet chatter on`,
+    }
+  } else if (/^box(es)?(\s+open)?$/i.test(args)) {
+    return { text: /open$/i.test(args) ? await openBox($) : boxText(await readWallet($)) }
+  } else if (/^(collection|inventory|bag)$/i.test(args)) {
+    return { text: collectionText(await readWallet($)) }
+  } else if (/^skins?(\s+\S+)?$/i.test(args)) {
+    const want = args.replace(/^skins?\s*/i, '').toLowerCase()
+    const w = await readWallet($)
+    if (!want) return { text: `Skins: ${w.skins.length ? w.skins.join(', ') : 'none yet: they come out of blind boxes (★ epic, ✦ legendary)'}${w.skin ? ` · wearing ${w.skin}` : ''}\n/pet skin <name> · /pet skin none` }
+    if (want === 'none' || want === 'off') {
+      await writeWallet($, { ...w, skin: null })
+      return { text: 'Back to its own colours.' }
+    }
+    if (!isSkinId(want)) return { text: `No skin called "${want}". Skins: ${SKIN_IDS.join(', ')}` }
+    if (!w.skins.includes(want)) return { text: `You haven't found the ${SKINS[want].name.toLowerCase()} skin yet: it comes out of blind boxes (${SKINS[want].rarity}).` }
+    await writeWallet($, { ...w, skin: want })
+    return { text: `Now ${SKINS[want].name.toLowerCase()}.` }
+  } else if (/^size(\s+(auto|big|small))?$/i.test(args)) {
+    const want = args.replace(/^size\s*/i, '').toLowerCase()
+    if (!want) return { text: `Pet size: ${petSize} (auto: the bigger, detailed pet when the band has room, the small classic one when it doesn't). /pet size auto|big|small` }
+    petSize = want as typeof petSize
+    await $.store.set('petSize', petSize)
+    petSim.lastCells = ''
+    return { text: want === 'small' ? 'The small classic pet, always.' : want === 'big' ? 'The bigger, detailed pet, always (it takes two more rows).' : 'Bigger when the band has room, small when it does not.' }
+  } else if (/^(settings|options|config)$/i.test(args)) {
+    const opened = await $.ui.open({ id: SETTINGS_PANE, title: 'PET SETTINGS' })
+    return { text: opened.isPlaced ? 'Settings are open: press a button to change one. READY.' : 'The settings pane is waiting for room.' }
+  } else if (/^motion(\s+(normal|low|off))?$/i.test(args)) {
+    const want = args.replace(/^motion\s*/i, '').toLowerCase()
+    if (!want) return { text: `Motion: ${motion}. normal: the pet walks and plays · low: about a frame a second, lighter on a slow computer · off: it sits still until something happens. /pet motion normal|low|off` }
+    motion = want as Motion
+    await $.store.set('motion', motion)
+    petSim.isStill = false
+    return { text: motion === 'off' ? 'The pet sits still, and moves only when something happens.' : motion === 'low' ? 'Low motion: about a frame a second.' : 'Normal motion.' }
+  } else if (/^shop$/i.test(args)) {
+    return { text: shopText(await readWallet($)) }
+  } else if (/^(buy|wear)\s+\S/i.test(args)) {
+    const [verb, ...rest] = args.split(/\s+/)
+    return { text: await shopCommand($, verb!.toLowerCase() as 'buy' | 'wear', rest.join(' ')) }
+  } else if (/^weather\b/i.test(args)) {
+    return weatherCommand($, args.replace(/^weather\s*/i, ''))
+  } else if (/^(help|\?|commands)$/i.test(args)) {
+    return { text: PET_HELP }
+  } else if (/^(pane|window)$/i.test(args)) {
+    const opened = await openPetPane($)
+    return { text: opened.isPlaced ? 'The pet pane is open. READY.' : 'The pet pane is waiting for room.' }
+  } else if (args === '') {
+    const shown = await update($, petShown, v => !v)
+    await $.store.set('petShown', shown)
+    const pet = await readPet($)
+    if (!shown) await $.ui.close({ id: PET_PANE })
+    return {
+      text: shown ? `${pet.name} the ${pet.kind} joins the band. READY.` : `${pet.name} is resting. /pet brings them back.`,
+    }
+  } else {
+    return { text: 'Usage: /pet help · /pet (show/hide) · /pet weather · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
+  }
+  await update($, petShown, () => true)
+  const pet = await readPet($)
+  return { text: `${pet.name} the ${pet.kind} is in the band. READY.` }
+}
+
+/** /retro: the band's sound, theme and font. */
+async function retroCommand($: EngineInterface, e: { args: string }): Promise<CommandRunResult> {
+  const ch = /^(?:sound|chime)\s+(on|off)$/i.exec(e.args.trim())?.[1]?.toLowerCase()
+  if (ch) {
+    const isOn = ch === 'on'
+    await update($, chimeOn, () => isOn)
+    await $.store.set('chimeOn', isOn)
+    return { text: isOn ? 'Sound on: the pet speaks when a long turn ends, and on level-ups and moods.' : 'Sound off.' }
+  }
+  const m = /^theme(?:\s+(.+))?$/i.exec(e.args.trim())
+  if (m) {
+    const spec = parseTheme(m[1] ?? '')
+    if (!spec) return { text: THEME_HELP }
+    await update($, theme, () => spec)
+    await $.store.set('theme', spec)
+    return { text: isThemeName(spec) ? `Theme: ${spec.toUpperCase()}. READY.` : `Theme: your own colours, ${spec.toUpperCase()}. READY.` }
+  }
+  const f = /^font(?:\s+(\w+))?$/i.exec(e.args.trim())
+  if (f) {
+    const name = (f[1] ?? '').toLowerCase()
+    if (!isFontName(name)) return { text: FONT_HELP }
+    await update($, font, () => name)
+    await $.store.set('font', name)
+    return { text: `Banner font: ${styleText(name.toUpperCase(), name)}. READY.` }
+  }
+  const hidden = await update($, isBandHidden, h => !h)
+  return { text: hidden ? 'Band hidden. /retro brings it back.' : 'Band shown. READY.' }
+}
+
+/** A settings button (P7): runs its command as if typed, and shows the reply as a toast. */
+async function pressSetting($: EngineInterface, command: 'pet' | 'retro', args: string) {
+  const res = command === 'retro' ? await retroCommand($, { args }) : await petCommand($, { args })
+  const text = 'text' in res ? res.text : undefined
+  if (text) $.ui.toast(text.split('\n')[0]!, { timeoutMs: 5000 })
+  await bumpSettings($)
+}
+
 export const register: Register = (on, options) => {
   configure(options)
   let isWorking = false
@@ -2504,258 +2834,10 @@ export const register: Register = (on, options) => {
     return { text: opened.isPlaced ? 'LOAD "QA MONITOR",8,1 … READY.' : 'QA MONITOR waiting for room: widen the terminal.' }
   })
 
-  on('command.run', { command: 'pet' }, async ($, e) => {
-    const args = e.args.trim()
-    const kind = args.toLowerCase()
-    let named = /^name\s+(.{1,16})$/i.exec(args)?.[1]?.trim()
-    if (/^name$/i.test(args)) named = await askPetName($)
-    if (/^name$/i.test(args) && !named) return { text: 'Kept the name.' }
-    if (/^(list|pets|animals)$/i.test(args)) {
-      const w = await readWallet($)
-      const locked = (k: PetKind) => BOX_PETS.includes(k) && !w.pets.includes(k)
-      return { text: `Pets: ${PET_KINDS.map(k => (locked(k) ? `🔒 ${k}` : `${PETS[k].emoji} ${k}`)).join(' · ')}\nSwitch with /pet <animal>; your XP and name stay. 🔒 animals hatch from blind boxes (/pet box).` }
-    }
-    if (isPetKind(kind)) {
-      const k: PetKind = kind
-      if (BOX_PETS.includes(k) && !(await readWallet($)).pets.includes(k)) {
-        return { text: `The ${k} only hatches from a blind box (✦ legendary). /pet box` }
-      }
-      const pet = await update($, petState, p => ({ ...(p.name ? p : { kind: CFG.petKind, name: CFG.petName }), kind: k }))
-      await $.store.set('pet', pet)
-    } else if (named) {
-      const pet = await update($, petState, p => ({ ...(p.name ? p : { kind: CFG.petKind, name: CFG.petName }), name: named }))
-      await $.store.set('pet', pet)
-    } else if (/^ball$/i.test(args)) {
-      await throwBall($)
-    } else if (/^pat$/i.test(args)) {
-      await patPet($)
-    } else if (/^join$/i.test(args)) {
-      if (!boardReady()) return { text: NOT_SET_UP }
-      const link = await readLink($)
-      if (link) return { text: `Already on the board as ${link.login}. /pet board world shows it; /pet leave removes you.` }
-      if (boardSync.isJoining) return { text: 'Already waiting for you to approve the code at github.com/login/device.' }
-      const r = await $.http.fetch('https://github.com/login/device/code', {
-        method: 'POST',
-        headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
-        body: `client_id=${encodeURIComponent(CFG.githubClientId)}&scope=`,
-      }).catch(() => null)
-      if (!r || !r.ok) return { text: `Could not reach GitHub to start the sign-in${r ? ` (${r.status})` : ''}.` }
-      const flow = JSON.parse(r.text) as DeviceCode
-      boardSync.isJoining = true
-      const now = await $.clock.now()
-      $.clock.after(flow.interval * 1000, () => void pollDevice($, flow, now + flow.expires_in * 1000, flow.interval * 1000))
-      return {
-        text: [
-          `Open ${flow.verification_uri} and enter: ${flow.user_code}`,
-          'GitHub will ask to share your public profile only (no scopes). Claude Pets finishes joining once you approve, and keeps only the board\'s own key, never your GitHub token.',
-          'Shared: your GitHub login, level, XP, favourite pet and streak. /pet leave deletes it all.',
-        ].join('\n'),
-      }
-    } else if (/^leave$/i.test(args)) {
-      const link = await readLink($)
-      if (!link) return { text: 'You are not on the shared board.' }
-      const r = await $.http.fetch(`${link.url}/v1/me`, { method: 'DELETE', headers: { authorization: `Bearer ${link.apiKey}` } }).catch(() => null)
-      await $.store.set('board', null)
-      return {
-        text: r && (r.status === 204 || r.status === 401)
-          ? `Left the board: ${link.login}'s entry is deleted, and nothing more will be sent.`
-          : 'Forgot the board key here, but could not reach the board to delete your entry; /pet join and /pet leave again later to remove it.',
-      }
-    } else if (/^board\s+world$/i.test(args)) {
-      const link = await readLink($)
-      const url = link?.url ?? CFG.leaderboardUrl
-      if (!url) return { text: NOT_SET_UP }
-      const r = await $.http.fetch(`${url}/v1/board?limit=20`, link ? { headers: { authorization: `Bearer ${link.apiKey}` } } : undefined).catch(() => null)
-      if (!r || !r.ok) return { text: `Could not reach the board${r ? ` (${r.status})` : ''}.` }
-      const d = JSON.parse(r.text) as { top: WorldRow[]; me: WorldRow | null }
-      return { text: worldText(d.top, d.me, link?.login ?? null) }
-    } else if (/^(board|leaderboard|profile)$/i.test(args)) {
-      return { text: boardText(await readProfile($), await playerName($), await readPet($)) }
-    } else if (/^(stats|status|xp)$/i.test(args)) {
-      await loadXp($)
-      const pet = await readPet($)
-      const lv = levelOf(petSim.xp)
-      const nextAt = 15 * lv * lv
-      return {
-        text: [
-          `${pet.name} the ${pet.kind} · LV${lv} · XP ${petSim.xp} (LV${lv + 1} at ${nextAt})`,
-          `Adopted ${await adoptedOn($)}${petSim.birthday ? ` · 🎂 ${petSim.birthday} TODAY` : ''}`,
-          `Stage: ${stageOf(lv).toUpperCase()}${nextStage(lv) ? ` (${nextStage(lv)!.stage.toUpperCase()} at LV${nextStage(lv)!.at})` : ' (fully grown)'}${petSim.wearing.length ? ` · wearing: ${petSim.wearing.map(i => ITEMS[i].name.toLowerCase()).join(', ')}` : ''}`,
-          ...(await nowLine($)),
-          `Mood: ${petSim.mood.toUpperCase()}${petSim.limitLabel ? ` (${petSim.limitLabel}${petSim.resetText ? `, resets in ${petSim.resetText}` : ''})` : ''}`,
-          `This session: ◆${petSim.collected} coins · ${petSim.bugs.length} bug(s) loose`,
-          `Helpers: ${petSim.kids.filter(k => k.state === 'work').length} out working${petSim.kids.length ? ` (${petSim.kids.map(k => `#${k.n} ${k.label || 'subagent'}: ${k.xp} XP`).join(', ')})` : ''} · ${petSim.kidsHome} came home (+${petSim.kidXp} XP)`,
-          'XP: +1 coin (a tool call that worked) · +5 bug squashed (an error) · +10 green test run · +2 per turn · +2 ball · runner: +1 a bug jumped, up to 20 a turn · helpers: +1 per subagent call that worked, +5 when its job is done',
-        ].join('\n'),
-      }
-    } else if (/^card$/i.test(args)) {
-      const link = await readLink($)
-      if (!link) return { text: 'The badge is for players on the world board: /pet join first.' }
-      const md = `[![${link.login}'s Claude Pet](${link.url}/card/${link.login}.svg)](https://github.com/quangtm0404/claude-pets)`
-      const copied = await $.ui.copy({ text: md })
-      return { text: `Your live badge, for a GitHub README (it updates as you play):\n\n${md}\n\n${copied.isCopied ? '(copied to the clipboard)' : '(copy it from here)'}` }
-    } else if (/^visit\s+\S+$/i.test(args)) {
-      const link = await readLink($)
-      if (!link) return { text: 'Visits are for players on the world board: /pet join first.' }
-      const who = args.replace(/^visit\s+@?/i, '')
-      const r = await $.http.fetch(`${link.url}/v1/pet/${encodeURIComponent(who)}`, { headers: { authorization: `Bearer ${link.apiKey}` } }).catch(() => null)
-      if (!r) return { text: 'Could not reach the board.' }
-      const d = JSON.parse(r.text || '{}') as { login?: string; level?: number; favPet?: string; wearing?: string[]; isFirstToday?: boolean; error?: string }
-      if (!r.ok || !d.login || !isPetKind(d.favPet)) return { text: d.error ? `${d.error}.` : `Could not visit ${who} (${r.status}).` }
-      const now = await $.clock.now()
-      petSim.guest = {
-        login: d.login, kind: d.favPet, level: d.level ?? 1, wearing: (d.wearing ?? []).filter(isItemId),
-        x: Math.max(0, petSim.columns - petW() - 1), dir: -1, pose: 'walkA', until: now + VISIT_MS,
-      }
-      if (d.isFirstToday) await gainXp($, 5, 'visit')
-      return { text: `${d.login}'s ${d.favPet} (LV${d.level}) comes to play for a minute.${d.isFirstToday ? ' +5 XP for you both, once a day.' : ''}` }
-    } else if (/^visits\s+(on|off)$/i.test(args)) {
-      const link = await readLink($)
-      if (!link) return { text: 'Visits are for players on the world board: /pet join first.' }
-      const isOff = /off$/i.test(args)
-      const r = await $.http.fetch(`${link.url}/v1/me`, {
-        method: 'PUT',
-        headers: { authorization: `Bearer ${link.apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ visitsOff: isOff }),
-      }).catch(() => null)
-      if (!r?.ok) return { text: 'Could not reach the board.' }
-      return { text: isOff ? 'Visits off: nobody can bring their pet to yours.' : 'Visits on: friends can /pet visit you.' }
-    } else if (/^diary(\s+card)?$/i.test(args)) {
-      const [d, pet, wx, themeName] = await Promise.all([readDiary($), readPet($), read($, weather), read($, theme)])
-      const text = diaryText(d, pet, wx, CFG.temperatureUnit)
-      if (!/card$/i.test(args)) return { text: `${text}\n\n/pet diary card copies it as an SVG picture to share.` }
-      await loadXp($)
-      const copied = await $.ui.copy({ text: diarySvg(text, pet, levelOf(petSim.xp), petSim.wearing, paletteOf(themeName), petSim.skin) })
-      return { text: copied.isCopied ? 'Copied the diary card as SVG: paste it into a file named diary.svg to share it.' : 'Could not copy the card here.' }
-    } else if (/^(play|game)(\s+(on|off|stop|auto|auto\s+off))?$/i.test(args)) {
-      const opt = args.replace(/^(play|game)\s*/i, '').toLowerCase().replace(/\s+/g, ' ')
-      if (opt === 'auto' || opt === 'auto off') {
-        await $.store.set('runnerAuto', opt === 'auto')
-        return { text: opt === 'auto' ? 'The runner will open by itself once Claude has worked 8 s. /pet play auto off stops that.' : 'The runner opens only when you ask: /pet play.' }
-      }
-      if (opt === 'off' || opt === 'stop') {
-        await closeRunner($)
-        return { text: 'Runner closed.' }
-      }
-      game.timer?.cancel()
-      game.isManual = true
-      await update($, runnerOn, () => true)
-      return { text: 'The runner is in the band: click it, then space to jump the bugs. /pet play off closes it.' }
-    } else if (/^focus\b/i.test(args)) {
-      return { text: await focusCommand($, args.replace(/^focus\s*/i, '')) }
-    } else if (/^breaks?(\s+\S+)?$/i.test(args)) {
-      const opt = args.replace(/^breaks?\s*/i, '')
-      if (!opt) {
-        const mins = await breakMinutes($)
-        return { text: mins ? `Break reminders: after ${mins} min of work (at most once an hour, never during a turn). /pet breaks <minutes>|off` : 'Break reminders are off. /pet breaks on (60 min) or /pet breaks <minutes>' }
-      }
-      const mins = parseBreaks(opt)
-      if (mins === null) return { text: 'Usage: /pet breaks 60 (15 to 240 minutes) · /pet breaks off · /pet breaks on' }
-      await $.store.set('breaks', mins)
-      return { text: mins ? `After ${mins} min of work, your pet will stretch and suggest a break (at most once an hour, never during a turn).` : 'Break reminders off.' }
-    } else if (/^(festivals?|seasons?)(\s+.*)?$/i.test(args)) {
-      return { text: await festivalsText($, args.replace(/^(festivals?|seasons?)\s*/i, '')) }
-    } else if (/^(birthday|bday|age)$/i.test(args)) {
-      return { text: await birthdayText($) }
-    } else if (/^chatter(\s+(on|off))?$/i.test(args)) {
-      const opt = args.replace(/^chatter\s*/i, '').toLowerCase()
-      const pet = await readPet($)
-      if (opt) await $.store.set('chatter', opt === 'on')
-      const isOn = (await $.store.get('chatter')) === true
-      return {
-        text: isOn
-          ? [
-            `Chatter on: after a turn, at most once every ${CHATTER_EVERY_MS / 60_000} minutes, ${pet.name} says a line in the band.`,
-            'A small model (haiku) writes it from a short summary made here: how long the turn took and how many edits, commands and tests ran.',
-            'Never your files, paths, commands, prompts or answers, and the line never goes into the conversation. A few hundred tokens each. /pet chatter off',
-          ].join('\n')
-          : `Chatter off: ${pet.name} keeps quiet. /pet chatter on`,
-      }
-    } else if (/^box(es)?(\s+open)?$/i.test(args)) {
-      return { text: /open$/i.test(args) ? await openBox($) : boxText(await readWallet($)) }
-    } else if (/^(collection|inventory|bag)$/i.test(args)) {
-      return { text: collectionText(await readWallet($)) }
-    } else if (/^skins?(\s+\S+)?$/i.test(args)) {
-      const want = args.replace(/^skins?\s*/i, '').toLowerCase()
-      const w = await readWallet($)
-      if (!want) return { text: `Skins: ${w.skins.length ? w.skins.join(', ') : 'none yet: they come out of blind boxes (★ epic, ✦ legendary)'}${w.skin ? ` · wearing ${w.skin}` : ''}\n/pet skin <name> · /pet skin none` }
-      if (want === 'none' || want === 'off') {
-        await writeWallet($, { ...w, skin: null })
-        return { text: 'Back to its own colours.' }
-      }
-      if (!isSkinId(want)) return { text: `No skin called "${want}". Skins: ${SKIN_IDS.join(', ')}` }
-      if (!w.skins.includes(want)) return { text: `You haven't found the ${SKINS[want].name.toLowerCase()} skin yet: it comes out of blind boxes (${SKINS[want].rarity}).` }
-      await writeWallet($, { ...w, skin: want })
-      return { text: `Now ${SKINS[want].name.toLowerCase()}.` }
-    } else if (/^size(\s+(auto|big|small))?$/i.test(args)) {
-      const want = args.replace(/^size\s*/i, '').toLowerCase()
-      if (!want) return { text: `Pet size: ${petSize} (auto: the bigger, detailed pet when the band has room, the small classic one when it doesn't). /pet size auto|big|small` }
-      petSize = want as typeof petSize
-      await $.store.set('petSize', petSize)
-      petSim.lastCells = ''
-      return { text: want === 'small' ? 'The small classic pet, always.' : want === 'big' ? 'The bigger, detailed pet, always (it takes two more rows).' : 'Bigger when the band has room, small when it does not.' }
-    } else if (/^motion(\s+(normal|low|off))?$/i.test(args)) {
-      const want = args.replace(/^motion\s*/i, '').toLowerCase()
-      if (!want) return { text: `Motion: ${motion}. normal: the pet walks and plays · low: about a frame a second, lighter on a slow computer · off: it sits still until something happens. /pet motion normal|low|off` }
-      motion = want as Motion
-      await $.store.set('motion', motion)
-      petSim.isStill = false
-      return { text: motion === 'off' ? 'The pet sits still, and moves only when something happens.' : motion === 'low' ? 'Low motion: about a frame a second.' : 'Normal motion.' }
-    } else if (/^shop$/i.test(args)) {
-      return { text: shopText(await readWallet($)) }
-    } else if (/^(buy|wear)\s+\S/i.test(args)) {
-      const [verb, ...rest] = args.split(/\s+/)
-      return { text: await shopCommand($, verb!.toLowerCase() as 'buy' | 'wear', rest.join(' ')) }
-    } else if (/^weather\b/i.test(args)) {
-      return weatherCommand($, args.replace(/^weather\s*/i, ''))
-    } else if (/^(help|\?|commands)$/i.test(args)) {
-      return { text: PET_HELP }
-    } else if (/^(pane|window)$/i.test(args)) {
-      const opened = await openPetPane($)
-      return { text: opened.isPlaced ? 'The pet pane is open. READY.' : 'The pet pane is waiting for room.' }
-    } else if (args === '') {
-      const shown = await update($, petShown, v => !v)
-      await $.store.set('petShown', shown)
-      const pet = await readPet($)
-      if (!shown) await $.ui.close({ id: PET_PANE })
-      return {
-        text: shown ? `${pet.name} the ${pet.kind} joins the band. READY.` : `${pet.name} is resting. /pet brings them back.`,
-      }
-    } else {
-      return { text: 'Usage: /pet help · /pet (show/hide) · /pet weather · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat' }
-    }
-    await update($, petShown, () => true)
-    const pet = await readPet($)
-    return { text: `${pet.name} the ${pet.kind} is in the band. READY.` }
-  })
+  on('command.run', { command: 'pet' }, ($, e) => petCommand($, e))
 
-  on('command.run', { command: 'retro' }, async ($, e) => {
-    const ch = /^(?:sound|chime)\s+(on|off)$/i.exec(e.args.trim())?.[1]?.toLowerCase()
-    if (ch) {
-      const isOn = ch === 'on'
-      await update($, chimeOn, () => isOn)
-      await $.store.set('chimeOn', isOn)
-      return { text: isOn ? 'Sound on: the pet speaks when a long turn ends, and on level-ups and moods.' : 'Sound off.' }
-    }
-    const m = /^theme(?:\s+(.+))?$/i.exec(e.args.trim())
-    if (m) {
-      const spec = parseTheme(m[1] ?? '')
-      if (!spec) return { text: THEME_HELP }
-      await update($, theme, () => spec)
-      await $.store.set('theme', spec)
-      return { text: isThemeName(spec) ? `Theme: ${spec.toUpperCase()}. READY.` : `Theme: your own colours, ${spec.toUpperCase()}. READY.` }
-    }
-    const f = /^font(?:\s+(\w+))?$/i.exec(e.args.trim())
-    if (f) {
-      const name = (f[1] ?? '').toLowerCase()
-      if (!isFontName(name)) return { text: FONT_HELP }
-      await update($, font, () => name)
-      await $.store.set('font', name)
-      return { text: `Banner font: ${styleText(name.toUpperCase(), name)}. READY.` }
-    }
-    const hidden = await update($, isBandHidden, h => !h)
-    return { text: hidden ? 'Band hidden. /retro brings it back.' : 'Band shown. READY.' }
-  })
+  on('command.run', { command: 'retro' }, ($, e) => retroCommand($, e))
+
 
   on('command.run', { command: 'story' }, async ($, e, next) => {
     const args = e.args.trim()
@@ -3229,6 +3311,32 @@ export const register: Register = (on, options) => {
           <Button key="ball" label="BALL" onPress={() => throwBall($)} />
           <Button key="pat" label="PAT" onPress={() => patPet($)} />
           <Button key="close" role="dismiss" label="CLOSE" onPress={() => $.ui.close({ id: PET_PANE })} />
+        </Box>
+      </Box>
+    )
+  })
+
+  // Every setting on one screen (P7): a row each, a button per choice, the current one marked.
+  on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const [themeName, , rows] = await Promise.all([read($, theme), read($, settingsRev), settingRows($)])
+    const C = paletteOf(themeName)
+    const W = Math.max(24, e.props.bodyColumns)
+    return (
+      <Box flexDirection="column" backgroundColor={C.bg} width={W} paddingX={1}>
+        <Text color={C.hi} backgroundColor={C.bg} bold>{'*** PET SETTINGS ***'}</Text>
+        {rows.map(r => (
+          <Box key={r.key} flexDirection="row" gap={1}>
+            <Text color={C.dim} backgroundColor={C.bg}>{r.label.padEnd(16)}</Text>
+            <Text color={C.fg} backgroundColor={C.bg} bold>{r.value.padEnd(8)}</Text>
+            {r.choices.map(c => (
+              <Button key={`${r.key}-${c.label}`} label={c.label === r.value ? `[${c.label}]` : c.label} onPress={() => pressSetting($, c.command ?? 'pet', c.args)} />
+            ))}
+          </Box>
+        ))}
+        <Text color={C.dim} backgroundColor={C.bg} wrap="wrap">{'Theme, font and weather: /retro theme · /retro font · /pet weather. Press a button, or type the command it names.'}</Text>
+        <Box flexDirection="row" gap={1}>
+          <Button key="close" role="dismiss" label="CLOSE" onPress={() => $.ui.close({ id: SETTINGS_PANE })} />
         </Box>
       </Box>
     )

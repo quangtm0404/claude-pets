@@ -1,15 +1,20 @@
 {
   "name": "pixel-pets",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Claude Pets: a pixel pet game and retro dashboard for Claude Code (terminal, desktop app and VS Code), with plan usage, weather, your backlog story, themes you colour yourself, pet voices and guardrails",
   "author": {
     "name": "quangtm0404"
   },
+  "homepage": "https://github.com/quangtm0404/claude-pets",
+  "repository": "https://github.com/quangtm0404/claude-pets",
   "license": "MIT",
   "keywords": [
     "retro",
     "statusline",
     "pet",
+    "virtual-pet",
+    "pixel-art",
+    "game",
     "dashboard",
     "usage",
     "backlog",

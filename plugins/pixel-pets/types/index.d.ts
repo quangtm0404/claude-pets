@@ -105,6 +105,8 @@ declare module 'claude-code' {
       usage: Usage
       pet: Pet
       petLine: string
+      /** Bumped when a setting changes, so the settings pane redraws (P7). */
+      settingsRev: number
       petShown: boolean
       git: GitInfo | null
       guardOff: boolean

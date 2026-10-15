@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.10.0 — 2026-10-15
+
+Found, and easy to tune ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E11-S03, E14, E15-S01).
+
+- **`/pet settings`** (E14-S01): every setting on one screen, a button per choice: pet, size, motion, sound, break reminders, festivals, chatter and the runner.
+- **`/pet festivals preview halloween`** (E14-S02): see any festival for 30 seconds, on any day. No keepsake: that still comes on the day.
+- **Lighter on a slow computer.** A pet sitting still is drawn less often, the desktop app and VS Code get at most two pictures a second with no blinking cursor in them, and the terminal strip is only redrawn when it changed. `/pet motion low` (about a frame a second) or `off` (still until something happens) go further.
+- **Fixed: two pets in VS Code.** VS Code now draws the band, so the pet pane no longer opens there by itself; `/pet pane` still opens it.
+- `docs/LISTING.md`: the plugin directory submission, ready to paste (E15-S01).
+
 ## 1.9.0 — 2026-10-14
 
 Built to last, and more to celebrate ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E11, E12-S01, E13).
@@ -10,8 +20,6 @@ Built to last, and more to celebrate ([backlog](https://github.com/quangtm0404/c
 - **CI** (E11-S01): every push is validated, tested and type-checked, and the board service's tests run.
 - **The mod in modules** (E11-S02): themes, weather, the pet's scene and the profile have their own files. No change in behaviour.
 - **A demo in the README** (E12-S01), drawn by the mod itself.
-- **Lighter on a slow computer.** A pet sitting still is drawn less often, the desktop app and VS Code get at most two pictures a second with no blinking cursor in them, and the terminal strip is only redrawn when it changed. `/pet motion low` (about a frame a second) or `off` (still until something happens) go further.
-- **Fixed: two pets in VS Code.** VS Code now draws the band, so the pet pane no longer opens there by itself; `/pet pane` still opens it.
 - The board service shows keepsakes on badges once it is redeployed; until then a badge keeps the last look it had.
 
 ## 1.8.0 — 2026-10-14

@@ -792,3 +792,89 @@ So that the band celebrates what matters to me.
 
 </details>
 
+## P7 · Found, and easy to tune - 🟡 In progress
+
+### E14 · Easy to tune - ✅ Done
+
+**Outcome.** Every option is a click away, and a festival can be seen before its day.
+
+<details><summary><b>E14-S01</b> - as a <b>user</b>, I want <b>every setting on one screen</b> · ✅ Done · 3 pts</summary>
+
+So that I don't have to remember a dozen /pet commands.
+
+**Acceptance criteria**
+- `/pet settings` opens a pane: pet shown, size, motion, sound, break reminders, festivals, chatter and the runner by itself
+- Each row has a button per choice, the current one marked; a press changes it as the typed command would, with the same reply as a toast
+- Works in the terminal, the desktop app and VS Code
+
+| Task | Kind | Status |
+|---|---|---|
+| The pane, its rows and buttons, run through the /pet and /retro commands | technical | ✅ Done |
+| Pressing each kind of button asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E14-S02</b> - as a <b>user</b>, I want <b>to see a festival before its day</b> · ✅ Done · 1 pts</summary>
+
+So that I know what's coming, and the drawing can be checked.
+
+**Acceptance criteria**
+- `/pet festivals preview halloween` (any festival, or `custom`) shows it in the band for 30 seconds, then today's look comes back
+- A preview gives no keepsake, and `/pet festivals` still says what today really is
+
+| Task | Kind | Status |
+|---|---|---|
+| Preview, by id or name | technical | ✅ Done |
+| Shown, then gone, and no keepsake, asserted in the VS Code band | testing | ✅ Done |
+
+</details>
+
+### E15 · Getting found - 🟡 In progress
+
+**Outcome.** People who'd like Claude Pets come across it.
+
+<details><summary><b>E15-S01</b> - as the <b>owner</b>, I want <b>the listing ready to paste</b> · 🟡 In progress · 2 pts</summary>
+
+So that submitting takes minutes.
+
+**Acceptance criteria**
+- `docs/LISTING.md`: the submission form's answers, what the plugin reads and sends, a short post and a checklist
+- `plugin.json` has the homepage, repository and keywords a directory shows
+- Submitted by the owner, after the release (it publishes under their name)
+
+| Task | Kind | Status |
+|---|---|---|
+| LISTING.md and plugin.json | technical | ✅ Done |
+| Release 1.10.0 (needs the owner's GitHub login) | technical | ⬜ To do |
+| Submit the form and post | technical | ⬜ To do |
+
+</details>
+
+<details><summary><b>E15-S02</b> - as a <b>user on a slow computer</b>, I want <b>the redraw saving measured on my machine</b> · ⬜ To do · 1 pts</summary>
+
+So that I know the motion setting helped.
+
+**Acceptance criteria**
+- After `/reload-plugins` in VS Code, the pet's redraws a minute are counted from the extension's log, before and after, at each motion setting
+
+| Task | Kind | Status |
+|---|---|---|
+| Count from the VS Code log after a reload | testing | ⬜ To do |
+
+</details>
+
+<details><summary><b>E15-S03</b> - as a <b>player</b>, I want <b>Halloween to look right on the day</b> · ⬜ To do · 1 pts</summary>
+
+So that the first festival with a keepsake goes well.
+
+**Acceptance criteria**
+- On 29 October: pumpkins and the bat in the band, the pumpkin hat given once, in the terminal and VS Code
+- `/pet festivals preview halloween` matches what the day shows
+
+| Task | Kind | Status |
+|---|---|---|
+| Preview checked in tests | testing | ✅ Done |
+| Seen on the day | testing | ⬜ To do |
+
+</details>
+

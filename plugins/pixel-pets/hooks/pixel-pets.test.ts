@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import {
-  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, festivalOn, focusLabel, focusXp,
+  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, festivalNamed, festivalOn, focusLabel, focusXp,
   midAutumnOf, nextBirthday, noteTestRun, parseBreaks, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary,
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
@@ -1609,5 +1609,73 @@ test('1.9.0: a remote band gets no blinking cursor in the picture, and at most t
   expect(seen.size).toBeLessThanOrEqual(12)
   expect([...seen].every(svg => svg.includes('<svg'))).toBe(true)
   for (const svg of seen) expect(svg).not.toContain('<rect x="0" y="0" width="6" height="12"')
+  await vs.unmount()
+})
+
+// ── P7: every setting in one place, and festivals on any day ────────────────
+const settingsPane = (surface: 'terminal' | 'vscode') => ({
+  plugin: 'pixel-pets', surface, component: 'Pane' as const, requestId: 'pet-settings',
+  props: { bodyColumns: 90 },
+})
+
+test('E14-S01: /pet settings opens a pane; its buttons change a setting and mark the current one', async ($, on) => {
+  const { store, toasts } = timed(on)
+  const opened: string[] = []
+  on('ui.open', (_$, e) => (opened.push(e.id), { value: { isPlaced: true } }) as never)
+  expect((await $.command.run(run('pet', 'settings'))).text).toBe('Settings are open: press a button to change one. READY.')
+  expect(opened).toContain('pet-settings')
+  expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet settings')
+  for (const surface of ['terminal', 'vscode'] as const) {
+    const ui = await $.ui.mount(settingsPane(surface) as never)
+    expect(await ui.find({ type: 'Text', text: /PET SETTINGS/ })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'motion-[NORMAL]' } as never)).toBeUndefined()
+    expect(await ui.find({ type: 'Button', key: 'motion-NORMAL' })).toBeDefined()
+    await ui.unmount()
+  }
+  const ui = await $.ui.mount(settingsPane('terminal') as never)
+  expect((await ui.find({ type: 'Button', key: 'motion-NORMAL' }))?.props.label).toBe('[NORMAL]')
+  await ui.press({ key: 'motion-LOW' })
+  expect(store.motion).toBe('low')
+  expect(toasts).toContain('Low motion: about a frame a second.')
+  expect((await ui.find({ type: 'Button', key: 'motion-LOW' }))?.props.label).toBe('[LOW]')
+  await ui.press({ key: 'festivals-OFF' })
+  expect(store.festivals).toBe(false)
+  await ui.press({ key: 'sound-OFF' })
+  expect(store.chimeOn).toBe(false)
+  await ui.press({ key: 'breaks-30' })
+  expect(store.breaks).toBe(30)
+  expect((await ui.find({ type: 'Text', text: /30 MIN/ }))).toBeDefined()
+  await ui.press({ key: 'runner-ON' })
+  expect(store.runnerAuto).toBe(true)
+  await ui.unmount()
+  await $.command.run(run('pet', 'motion normal'))
+})
+
+test('E14-S02: /pet festivals preview shows a festival for 30 seconds, without its keepsake', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('session.surfaces', () => ({ value: ['vscode'] }) as never)
+  on('ui.log', () => ({ value: undefined }) as never)
+  on('http.fetch', () => ({ value: { status: 500, ok: false, headers: {}, text: '' } }) as never)
+  const { store, toasts, clock } = timed(on, {}, Date.parse('2026-10-15T10:00:00'))
+  await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true } as never)
+  const vs = await $.ui.mount(tallBand('vscode') as never)
+  const svg = async () => {
+    await clock.advance(1200)
+    return String((await vs.find({ type: 'Svg' }))?.props.source)
+  }
+  expect(await svg()).not.toContain('#fb8c00')
+  expect(festivalNamed('Halloween', 2026)?.id).toBe('halloween')
+  expect(festivalNamed('xmas', 2026)?.id).toBe('christmas')
+  expect(festivalNamed('nope', 2026)).toBeNull()
+  const ran = await $.command.run(run('pet', 'festivals preview halloween'))
+  expect(ran.text).toBe('Pixel tries out Halloween for 30 seconds. The keepsake still comes only on the day.')
+  expect((await $.command.run(run('pet', 'festivals'))).text).toContain('No festival today.')
+  expect(await svg()).toContain('#fb8c00') // the pumpkins
+  expect(toasts.some(t => t.includes('KEEPSAKE'))).toBe(false)
+  expect(((store.wallet as { owned?: string[] } | undefined)?.owned ?? []).includes('pumpkin')).toBe(false)
+  expect((await $.command.run(run('pet', 'festivals preview'))).text).toContain('Which one? /pet festivals preview tet|')
+  await clock.advance(31_000)
+  expect(await svg()).not.toContain('#fb8c00')
+  expect((await $.command.run(run('pet', 'festivals'))).text).toContain('No festival today.')
   await vs.unmount()
 })

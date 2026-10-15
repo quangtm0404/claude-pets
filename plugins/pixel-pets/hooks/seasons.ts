@@ -98,6 +98,11 @@ export type Festival = { id: FestivalId; title: string; line: string }
 /** A day of your own, every year (E13-S03): MM-DD and what it is called. */
 export type MyFestival = { date: string; title: string }
 
+/** Each festival's name in a sentence. */
+export const FESTIVAL_NAMES: Record<Exclude<FestivalId, 'custom'>, string> = {
+  tet: 'Tết', midautumn: 'Mid-Autumn', christmas: 'Christmas', newyear: 'New Year', valentine: "Valentine's Day", halloween: 'Halloween',
+}
+
 /** What each festival is called, and what the pet does for it. */
 export const FESTIVALS: Record<Exclude<FestivalId, 'custom'>, { title: string; line: (year: number) => string; when: string }> = {
   tet: { title: 'TẾT', line: () => 'HANGS LANTERNS · CHÚC MỪNG NĂM MỚI!', when: 'three days either side of the lunar new year' },
@@ -141,8 +146,9 @@ export function upcomingFestivals(day: string, mine: MyFestival[] = []): [string
   const y = Number(day.slice(0, 4))
   const all: [string, string][] = []
   for (const year of [y, y + 1]) {
-    all.push(['Tết', tetOf(year)], ['Mid-Autumn', midAutumnOf(year)], ['Christmas', `${year}-12-25`], ['New Year', `${year + 1}-01-01`])
-    all.push(["Valentine's Day", `${year}-02-14`], ['Halloween', `${year}-10-31`])
+    const N = FESTIVAL_NAMES
+    all.push([N.tet, tetOf(year)], [N.midautumn, midAutumnOf(year)], [N.christmas, `${year}-12-25`], [N.newyear, `${year + 1}-01-01`])
+    all.push([N.valentine, `${year}-02-14`], [N.halloween, `${year}-10-31`])
     for (const f of mine) all.push([f.title, `${year}-${f.date}`])
   }
   return all.filter(([, d]) => d >= day).sort((a, b) => a[1].localeCompare(b[1])).slice(0, 4)
