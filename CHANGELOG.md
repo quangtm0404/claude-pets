@@ -11,6 +11,7 @@ Found, and easy to tune ([backlog](https://github.com/quangtm0404/claude-pets/bl
 - **Fixed: two pets in VS Code.** VS Code now draws the band, so the pet pane no longer opens there by itself; `/pet pane` still opens it.
 - **`/pet backup` and `/pet restore <code>`** (E16-S01): move your pet to another computer with one line of text; `/pet restore undo` takes it back. The leaderboard key and weather place stay behind.
 - Commands typed while `/pet settings` is open now update it too.
+- Shorter command descriptions with argument hints, so the typeahead shows what `/pet`, `/retro`, `/story`, `/ticket` and `/guard` take.
 - `docs/LISTING.md`: the plugin directory submission, ready to paste (E15-S01).
 
 ## 1.9.0 — 2026-10-14

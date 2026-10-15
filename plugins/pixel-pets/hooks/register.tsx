@@ -2373,22 +2373,20 @@ function usageRow(Box: unknown, Text: unknown, C: Palette, u: Usage, now: number
   )
 }
 
-const COMMANDS: { name: string; description: string }[] = [
+const COMMANDS: { name: string; description: string; argumentHint?: string }[] = [
   { name: 'qa-pane', description: 'Open the retro QA MONITOR pane' },
-  {
-    name: 'story',
-    description: 'Track a backlog story from markdown: /story E12-S03 · /story clear · /story plan (pick this repo\'s plan file)',
-  },
-  { name: 'ticket', description: 'Show an issue key and environment in the band: /ticket PROJ-123 DEV, or /ticket clear' },
+  { name: 'story', description: 'Track a backlog story from markdown in the band', argumentHint: '[E12-S03|clear|plan]' },
+  { name: 'ticket', description: 'Show an issue key and environment in the band', argumentHint: '[PROJ-123 DEV|clear]' },
   {
     name: 'pet',
-    description: 'Claude Pets: /pet help lists everything · /pet box [open] · /pet collection · /pet skin · /pet focus [25/5|45/5|stop] · /pet breaks · /pet festivals · /pet birthday · /pet chatter on|off · /pet (show/hide) · /pet weather <city>|here|off · /pet pane · /pet board · /pet board world · /pet join · /pet leave · /pet stats · /pet list · /pet <animal> · /pet name [Mochi] · /pet ball · /pet pat',
+    description: 'Claude Pets: your pet, its game and settings (/pet help lists everything)',
+    argumentHint: '[help|settings|stats|focus|box|shop|festivals|weather|motion|backup|…]',
   },
   // not `standup`: other plugins commonly own that name
   { name: 'standup64', description: 'Three-line standup (Done / Next / Blockers) from this session, copied to the clipboard' },
   { name: 'defect', description: 'Draft a bug report for the last failed test run into the prompt' },
-  { name: 'guard', description: 'Claude Pets guardrails: /guard (status) · /guard off · /guard on' },
-  { name: 'retro', description: 'Toggle the Claude Pets band · /retro theme <preset>|#accent [on #background] · /retro font plain|bold|mono|double|wide|pixel · /retro sound on|off' },
+  { name: 'guard', description: 'Claude Pets guardrails: refused edits to generated files, a question before risky commands', argumentHint: '[on|off]' },
+  { name: 'retro', description: 'Show or hide the Claude Pets band; its theme, font and sound', argumentHint: '[theme <preset>|#accent] [font <name>] [sound on|off]' },
 ]
 
 /** `/pet help`: every command, grouped. */
