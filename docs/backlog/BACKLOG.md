@@ -725,18 +725,18 @@ So that I know what I'm getting.
 
 </details>
 
-<details><summary><b>E12-S02</b> - as the <b>owner</b>, I want <b>Claude Pets listed where people look for plugins</b> · ⬜ To do · 1 pts</summary>
+<details><summary><b>E12-S02</b> - as the <b>owner</b>, I want <b>Claude Pets listed where people look for plugins</b> · 🟡 In progress · 1 pts</summary>
 
 So that people find it without a link.
 
 **Acceptance criteria**
 - Submitted to a plugin directory or marketplace listing, by the owner (it publishes under their name)
-- The repo has a description and topics (claude-code, plugin, pixel-art, pet)
+- The repo has a description and topics (claude-code, claude-code-plugin, pixel-art, virtual-pet)
 
 | Task | Kind | Status |
 |---|---|---|
 | Submit the listing | technical | ⬜ To do |
-| Repo description and topics | technical | ⬜ To do |
+| Repo description and topics | technical | ✅ Done |
 
 </details>
 
