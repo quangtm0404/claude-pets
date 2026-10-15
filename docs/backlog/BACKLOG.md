@@ -803,7 +803,7 @@ So that the band celebrates what matters to me.
 So that I don't have to remember a dozen /pet commands.
 
 **Acceptance criteria**
-- `/pet settings` opens a pane: pet shown, size, motion, sound, break reminders, festivals, chatter and the runner by itself
+- `/pet settings` opens a pane: pet shown, size, motion, theme, font, sound, break reminders, festivals, chatter and the runner by itself; the buttons wrap in a narrow pane
 - Each row has a button per choice, the current one marked; a press changes it as the typed command would, with the same reply as a toast
 - Works in the terminal, the desktop app and VS Code
 
@@ -850,16 +850,20 @@ So that submitting takes minutes.
 
 </details>
 
-<details><summary><b>E15-S02</b> - as a <b>user on a slow computer</b>, I want <b>the redraw saving measured on my machine</b> · ⬜ To do · 1 pts</summary>
+<details><summary><b>E15-S02</b> - as a <b>user on a slow computer</b>, I want <b>the redraw saving measured on my machine</b> · 🟡 In progress · 2 pts</summary>
 
 So that I know the motion setting helped.
 
 **Acceptance criteria**
-- After `/reload-plugins` in VS Code, the pet's redraws a minute are counted from the extension's log, before and after, at each motion setting
+- `/pet perf` says, per minute, how often the band redrew, how many pet pictures went to the desktop app or VS Code, how many strip frames the terminal got, and the pet's beats; `/pet perf reset` starts the count again
+- Measured on the owner's computer in VS Code: about 120 band redraws a minute before (from the extension's log), then with `/pet perf` at each motion setting after `/reload-plugins`
 
 | Task | Kind | Status |
 |---|---|---|
-| Count from the VS Code log after a reload | testing | ⬜ To do |
+| `/pet perf` counters and text | technical | ✅ Done |
+| Counts asserted with a mock clock | testing | ✅ Done |
+| Before: ~120 band redraws a minute in VS Code | testing | ✅ Done |
+| After, at each motion setting | testing | ⬜ To do |
 
 </details>
 

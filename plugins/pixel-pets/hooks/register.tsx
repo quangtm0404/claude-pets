@@ -580,6 +580,24 @@ export type Motion = 'normal' | 'low' | 'off'
 let motion: Motion = 'normal'
 /** The pet's timer runs every TICK_MS; a still pet, low or off motion only take every n-th tick. */
 const TICK_MS = 140
+/** What the pet costs to draw (E15-S02), counted since the session started or /pet perf reset. */
+const perf = { since: 0, renders: 0, pictures: 0, blits: 0, beats: 0 }
+
+/** /pet perf: the drawing counted per minute, so the motion setting can be judged on this computer. */
+export function perfText(p: typeof perf, now: number, m: Motion): string {
+  const min = Math.max(1 / 60, (now - p.since) / 60_000)
+  const rate = (n: number) => String(Math.round(n / min)).padStart(5)
+  const ago = min < 1 ? `${Math.round(min * 60)} s` : `${Math.round(min)} min`
+  return [
+    `Drawing over the last ${ago} (motion ${m}), per minute:`,
+    `  ${rate(p.renders)}  band redraws`,
+    `  ${rate(p.pictures)}  pet pictures sent (desktop app, VS Code)`,
+    `  ${rate(p.blits)}  strip frames (terminal)`,
+    `  ${rate(p.beats)}  pet beats`,
+    m === 'off' ? 'The pet is still. /pet motion normal brings the walking back.' : `Lighter: /pet motion ${m === 'normal' ? 'low (about a frame a second) or off' : 'off'} (still until something happens). /pet perf reset starts the count again.`,
+  ].join('\n')
+}
+
 /** The least time between two SVG frames for a remote surface, by motion. */
 const SVG_GAP_MS: Record<Motion, number> = { normal: 560, low: 1100, off: 1100 }
 export const levelOf = (xp: number) => Math.floor(Math.sqrt(Math.max(0, xp) / 15)) + 1
@@ -1697,8 +1715,8 @@ type SettingRow = { label: string; key: string; value: string; choices: { label:
 /** Every setting as it stands now (P7): what /pet settings shows. */
 async function settingRows($: EngineInterface): Promise<SettingRow[]> {
   const get = (key: string) => $.store.get(key)
-  const [shown, chime, breaks, fest, chat, auto] = await Promise.all([
-    read($, petShown), read($, chimeOn), breakMinutes($), get('festivals'), get('chatter'), get('runnerAuto'),
+  const [shown, chime, breaks, fest, chat, auto, themeSpec, fontName] = await Promise.all([
+    read($, petShown), read($, chimeOn), breakMinutes($), get('festivals'), get('chatter'), get('runnerAuto'), read($, theme), read($, font),
   ])
   const onOff = (isOn: boolean, args: (v: 'on' | 'off') => string, command: 'pet' | 'retro' = 'pet') => ({
     value: isOn ? 'ON' : 'OFF',
@@ -1708,6 +1726,8 @@ async function settingRows($: EngineInterface): Promise<SettingRow[]> {
     { label: 'PET', key: 'shown', value: shown ? 'ON' : 'OFF', choices: [{ label: shown ? 'REST' : 'SHOW', args: '' }] },
     { label: 'SIZE', key: 'size', value: petSize.toUpperCase(), choices: (['auto', 'big', 'small'] as const).map(v => ({ label: v.toUpperCase(), args: `size ${v}` })) },
     { label: 'MOTION', key: 'motion', value: motion.toUpperCase(), choices: (['normal', 'low', 'off'] as const).map(v => ({ label: v.toUpperCase(), args: `motion ${v}` })) },
+    { label: 'THEME', key: 'theme', value: isThemeName(themeSpec) ? themeSpec.toUpperCase() : 'YOUR OWN', choices: THEME_NAMES.map(n => ({ label: n.toUpperCase(), args: `theme ${n}`, command: 'retro' as const })) },
+    { label: 'FONT', key: 'font', value: fontName.toUpperCase(), choices: FONT_NAMES.map(n => ({ label: n.toUpperCase(), args: `font ${n}`, command: 'retro' as const })) },
     { label: 'SOUND', key: 'sound', ...onOff(chime, v => `sound ${v}`, 'retro') },
     { label: 'BREAKS', key: 'breaks', value: breaks ? `${breaks} MIN` : 'OFF', choices: [{ label: '30', args: 'breaks 30' }, { label: '60', args: 'breaks 60' }, { label: 'OFF', args: 'breaks off' }] },
     { label: 'FESTIVALS', key: 'festivals', ...onOff(typeof fest === 'boolean' ? fest : CFG.festivals, v => `festivals ${v}`) },
@@ -1776,6 +1796,7 @@ async function petTick($: EngineInterface) {
   s.beat++
   const stride = motion === 'off' ? 8 : motion === 'low' ? 4 : s.isStill ? 3 : 1
   if (s.beat % stride !== 0) return
+  perf.beats++
   const now = await $.clock.now()
   if (festivalPreview && now >= festivalPreview.until) await refreshCalendar($)
   if (s.lastActive === 0) s.lastActive = now
@@ -2003,6 +2024,7 @@ async function petTick($: EngineInterface) {
     if (cells === s.lastCells) return finishTick($, s, frame, line, isRemote, now)
     s.lastCells = cells
     const shown = await $.ui.blit({ requestId: s.requestId, key: 'pet', cells, columns: s.columns, rows: stripRows(s.hd) })
+    perf.blits++
     if (shown.deny !== undefined) s.isMounted = false
   }
   await finishTick($, s, frame, line, isRemote, now)
@@ -2017,6 +2039,7 @@ async function finishTick($: EngineInterface, s: typeof petSim, frame: PetFrame,
       s.lastArt = art
       s.lastArtAt = now
       await update($, petArt, () => art)
+      perf.pictures++
     }
   }
   if (line !== s.line) {
@@ -2383,6 +2406,7 @@ export const PET_HELP = [
   '  /pet size auto|big|small   the bigger, detailed pet or the small classic one',
   '  /pet motion normal|low|off  less movement, lighter on a slow computer',
   '  /pet settings              every setting on one screen, with buttons',
+  '  /pet perf [reset]          how much the pet is drawing, per minute',
   '  /pet breaks [60|off]       a stretch-and-water reminder after an hour of work',
   '  /pet festivals [on|off]    Tết, Mid-Autumn, Christmas, New Year, Valentine\'s, Halloween',
   '  /pet festivals add 11-20 Teachers\' Day   a day of your own (remove <name> to drop it)',
@@ -2678,6 +2702,10 @@ async function petCommand($: EngineInterface, e: { args: string }): Promise<Comm
     await $.store.set('petSize', petSize)
     petSim.lastCells = ''
     return { text: want === 'small' ? 'The small classic pet, always.' : want === 'big' ? 'The bigger, detailed pet, always (it takes two more rows).' : 'Bigger when the band has room, small when it does not.' }
+  } else if (/^perf(\s+reset)?$/i.test(args)) {
+    const now = await $.clock.now()
+    if (/reset/i.test(args) || !perf.since) Object.assign(perf, { since: now, renders: 0, pictures: 0, blits: 0, beats: 0 })
+    return { text: /reset/i.test(args) ? 'Counting the drawing from now: /pet perf in a minute or two.' : perfText(perf, now, motion) }
   } else if (/^(settings|options|config)$/i.test(args)) {
     const opened = await $.ui.open({ id: SETTINGS_PANE, title: 'PET SETTINGS' })
     return { text: opened.isPlaced ? 'Settings are open: press a button to change one. READY.' : 'The settings pane is waiting for room.' }
@@ -2782,6 +2810,7 @@ export const register: Register = (on, options) => {
     if ((await $.store.get('chimeOn')) === false) await update($, chimeOn, () => false)
     void refreshGit($)
     $.clock.every(10000, () => void refreshGit($))
+    if (!perf.since) perf.since = await $.clock.now()
     $.clock.every(TICK_MS, () => void petTick($))
     await resumeFocus($)
     $.clock.every(1000, () => void refreshFocusText($))
@@ -3094,6 +3123,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    perf.renders++
     if (e.props.hasSurvey || (await read($, isBandHidden))) {
       if (e.surface !== 'terminal') petSim.remote.band = false
       return next(e)
@@ -3329,12 +3359,14 @@ export const register: Register = (on, options) => {
           <Box key={r.key} flexDirection="row" gap={1}>
             <Text color={C.dim} backgroundColor={C.bg}>{r.label.padEnd(16)}</Text>
             <Text color={C.fg} backgroundColor={C.bg} bold>{r.value.padEnd(8)}</Text>
-            {r.choices.map(c => (
-              <Button key={`${r.key}-${c.label}`} label={c.label === r.value ? `[${c.label}]` : c.label} onPress={() => pressSetting($, c.command ?? 'pet', c.args)} />
-            ))}
+            <Box flexDirection="row" flexWrap="wrap" gap={1} flexShrink={1}>
+              {r.choices.map(c => (
+                <Button key={`${r.key}-${c.label}`} label={c.label === r.value ? `[${c.label}]` : c.label} onPress={() => pressSetting($, c.command ?? 'pet', c.args)} />
+              ))}
+            </Box>
           </Box>
         ))}
-        <Text color={C.dim} backgroundColor={C.bg} wrap="wrap">{'Theme, font and weather: /retro theme · /retro font · /pet weather. Press a button, or type the command it names.'}</Text>
+        <Text color={C.dim} backgroundColor={C.bg} wrap="wrap">{'Your own colours: /retro theme #f80 on #101010 · weather: /pet weather <city> · how much it draws: /pet perf'}</Text>
         <Box flexDirection="row" gap={1}>
           <Button key="close" role="dismiss" label="CLOSE" onPress={() => $.ui.close({ id: SETTINGS_PANE })} />
         </Box>

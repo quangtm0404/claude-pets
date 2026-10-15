@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import {
   ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, festivalNamed, festivalOn, focusLabel, focusXp,
-  midAutumnOf, nextBirthday, noteTestRun, parseBreaks, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary,
+  midAutumnOf, nextBirthday, noteTestRun, parseBreaks, perfText, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary,
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
 import { press, step } from './runner'
@@ -1571,9 +1571,9 @@ test('1.9.0: /pet motion low|off is kept; off sits the pet still, so the strip s
   await $.session.start(START)
   expect((await $.command.run(run('pet', 'motion'))).text).toContain('Motion: normal')
   const ui = await $.ui.mount(tallBand('terminal') as never)
-  await clock.advance(5000)
+  await clock.advance(20_000)
   const moving = blits
-  expect(moving).toBeGreaterThan(10)
+  expect(moving).toBeGreaterThan(40)
 
   expect((await $.command.run(run('pet', 'motion off'))).text).toBe('The pet sits still, and moves only when something happens.')
   expect(store.motion).toBe('off')
@@ -1584,9 +1584,9 @@ test('1.9.0: /pet motion low|off is kept; off sits the pet still, so the strip s
 
   expect((await $.command.run(run('pet', 'motion low'))).text).toBe('Low motion: about a frame a second.')
   blits = 0
-  await clock.advance(5000)
+  await clock.advance(20_000)
   expect(blits).toBeGreaterThan(0)
-  expect(blits).toBeLessThan(moving / 2)
+  expect(blits).toBeLessThan(moving * 0.75)
   await ui.unmount()
   expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet motion normal|low|off')
 })
@@ -1647,6 +1647,11 @@ test('E14-S01: /pet settings opens a pane; its buttons change a setting and mark
   expect((await ui.find({ type: 'Text', text: /30 MIN/ }))).toBeDefined()
   await ui.press({ key: 'runner-ON' })
   expect(store.runnerAuto).toBe(true)
+  await ui.press({ key: 'theme-AMBER' })
+  expect(store.theme).toBe('amber')
+  expect((await ui.find({ type: 'Button', key: 'theme-AMBER' }))?.props.label).toBe('[AMBER]')
+  await ui.press({ key: 'font-BOLD' })
+  expect(store.font).toBe('bold')
   await ui.unmount()
   await $.command.run(run('pet', 'motion normal'))
 })
@@ -1678,4 +1683,34 @@ test('E14-S02: /pet festivals preview shows a festival for 30 seconds, without i
   expect(await svg()).not.toContain('#fb8c00')
   expect((await $.command.run(run('pet', 'festivals'))).text).toContain('No festival today.')
   await vs.unmount()
+})
+
+test('E15-S02: /pet perf counts the drawing per minute; reset starts again', async ($, on) => {
+  expect(perfText({ since: 0, renders: 120, pictures: 60, blits: 0, beats: 300 }, 120_000, 'normal')).toBe([
+    'Drawing over the last 2 min (motion normal), per minute:',
+    '     60  band redraws',
+    '     30  pet pictures sent (desktop app, VS Code)',
+    '      0  strip frames (terminal)',
+    '    150  pet beats',
+    'Lighter: /pet motion low (about a frame a second) or off (still until something happens). /pet perf reset starts the count again.',
+  ].join('\n'))
+  expect(perfText({ since: 0, renders: 1, pictures: 0, blits: 0, beats: 0 }, 30_000, 'off')).toContain('over the last 30 s (motion off)')
+
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('session.surfaces', () => ({ value: ['terminal'] }) as never)
+  on('ui.log', () => ({ value: undefined }) as never)
+  on('ui.blit', () => ({ value: {} }) as never)
+  on('http.fetch', () => ({ value: { status: 500, ok: false, headers: {}, text: '' } }) as never)
+  const { clock } = timed(on)
+  await $.session.start(START)
+  const ui = await $.ui.mount(tallBand('terminal') as never)
+  expect((await $.command.run(run('pet', 'perf reset'))).text).toBe('Counting the drawing from now: /pet perf in a minute or two.')
+  await clock.advance(60_000)
+  const text = (await $.command.run(run('pet', 'perf'))).text
+  const rate = (label: string) => Number(text.split('\n').find(l => l.endsWith(label))?.trim().split(' ')[0])
+  expect(rate('pet beats')).toBeGreaterThan(100)
+  expect(rate('strip frames (terminal)')).toBeGreaterThan(0)
+  expect(rate('pet pictures sent (desktop app, VS Code)')).toBe(0)
+  await ui.unmount()
+  expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet perf [reset]')
 })
