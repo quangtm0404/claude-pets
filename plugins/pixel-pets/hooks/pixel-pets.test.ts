@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import {
-  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
-  midAutumnOf, nextBirthday, noteTestRun, parseBreaks, perfText, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary,
+  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, dayPlus, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
+  midAutumnOf, nextBirthday, noteTestRun, parseBreaks, perfText, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary, weekText,
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
 import { press, step } from './runner'
@@ -1809,4 +1809,50 @@ test('E15-S03: on 29 October both the terminal and VS Code show pumpkins and the
   expect((store.wallet as { owned: string[] }).owned.filter(id => id === 'pumpkin')).toHaveLength(1)
   await term.unmount()
   await vs.unmount()
+})
+
+// ── E17: the week ───────────────────────────────────────────────────────────
+const page = (day: string, more: Record<string, unknown>) => ({
+  day, xp: 0, coins: 0, bugs: 0, helpers: 0, turns: 0, runnerXp: 0, visits: 0, focus: 0, green: 0, red: 0, commits: 0, stories: [] as string[], ...more,
+})
+
+test('E17-S01: /pet week adds up the last seven days, a bar for each', () => {
+  expect(dayPlus('2026-10-15', -6)).toBe('2026-10-09')
+  expect(dayPlus('2026-12-31', 1)).toBe('2027-01-01')
+  expect(dayPlus('2024-03-01', -1)).toBe('2024-02-29')
+  const days = [
+    page('2026-10-01', { xp: 999 }), // too old: not this week
+    page('2026-10-09', { xp: 40, commits: 2, green: 3, stories: ['E14-S01'] }),
+    page('2026-10-12', { xp: 120, coins: 9, bugs: 2, commits: 4, focus: 2, red: 1, turns: 5, stories: ['E14-S01', 'E15-S02'] }),
+    page('2026-10-15', { xp: 60, helpers: 1, turns: 3, green: 2 }),
+  ]
+  expect(weekText(days, '2026-10-15', { name: 'Pixel' })).toBe([
+    "PIXEL'S WEEK · 2026-10-09 to 2026-10-15",
+    'XP by day  ▃··█··▄  FSSMTWT  · best: Mon 10-12, 120 XP',
+    '220 XP · ◆9 · 2 bugs squashed · 6 commits · tests 5 green, 1 red · 2 focus rounds · 1 helper home',
+    'Active 3 of 7 days · 8 turns',
+    'Worked on: E14-S01, E15-S02',
+  ].join('\n'))
+  expect(weekText([], '2026-10-15', { name: 'Pixel' })).toContain('nothing yet')
+})
+
+test('E17-S01: a day\'s page is kept when the next day starts; Monday brings last week as a toast, once', async ($, on) => {
+  const { store, toasts, clock } = timed(on, {}, Date.parse('2026-10-18T10:00:00')) // a Sunday
+  on('tool.call', () => ({ result: {}, text: '[main 1a2b3c4] fix\n 1 file changed' }) as never)
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "x"' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "y"' } as never)
+  expect((store.diary as { day: string; commits: number })).toMatchObject({ day: '2026-10-18', commits: 2 })
+
+  await clock.advance(86_400_000) // Monday
+  await $.command.run(run('pet', 'festivals')) // the calendar looks
+  expect(toasts.filter(t => t.startsWith('▶ LAST WEEK:'))).toEqual(['▶ LAST WEEK: 0 XP · 2 COMMITS · 0 GREEN RUNS · 0 FOCUS ROUNDS · /pet week'])
+  await $.command.run(run('pet', 'festivals'))
+  expect(toasts.filter(t => t.startsWith('▶ LAST WEEK:'))).toHaveLength(1)
+
+  const week = await $.command.run(run('pet', 'week'))
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "z"' } as never) // Monday's first page
+  expect((store.diaryDays as { day: string }[]).map(d => d.day)).toEqual(['2026-10-18'])
+  expect(week.text).toContain('2 commits')
+  expect(week.text).toContain('2026-10-13 to 2026-10-19')
+  expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet week')
 })

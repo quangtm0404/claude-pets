@@ -883,7 +883,7 @@ So that the first festival with a keepsake goes well.
 
 </details>
 
-## P8 · Your pet, anywhere - 🟡 In progress
+## P8 · Your pet, anywhere, and your week - 🟡 In progress
 
 ### E16 · Take it with you - 🟡 In progress
 
@@ -904,6 +904,27 @@ So that the pet I've raised comes with me (the Mac install started from nothing)
 | backup.ts (the code), backup and restore commands, one loader for start and restore | technical | ✅ Done |
 | Round trip with accents, secrets left out, bad codes, restore and undo asserted | testing | ✅ Done |
 | Moved to the Mac for real | testing | ⬜ To do |
+
+</details>
+
+### E17 · Looking back - ✅ Done
+
+**Outcome.** The work of a week is there to see, not just today's.
+
+<details><summary><b>E17-S01</b> - as a <b>developer</b>, I want <b>a weekly recap</b> · ✅ Done · 3 pts</summary>
+
+So that I can see how the week went, and have something for a Monday standup.
+
+**Acceptance criteria**
+- Each day's diary page is kept when the next day starts (the last 28 days), with that day's commits
+- `/pet week`: XP by day as bars, the best day, and the week's XP, coins, bugs, commits, test runs, focus rounds, helpers, active days and stories
+- On Monday, a toast with last week, once, when there was any work in it
+- Backups carry the diary
+
+| Task | Kind | Status |
+|---|---|---|
+| Past days, commits per day, /pet week, the Monday toast | technical | ✅ Done |
+| The week's sums and bars, the day rolling over, one toast asserted | testing | ✅ Done |
 
 </details>
 

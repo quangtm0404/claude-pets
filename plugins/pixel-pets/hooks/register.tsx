@@ -1239,6 +1239,7 @@ async function refreshCalendar($: EngineInterface): Promise<Festival | null> {
   if (festivalPreview && now >= festivalPreview.until) festivalPreview = null
   petSim.festival = festivalPreview?.festival ?? real
   if (real) await giveKeepsake($, real)
+  await mondayRecap($, today)
   const age = birthdayAge(await adoptedOn($), today)
   petSim.birthday = age
   if (!age || (await $.store.get('birthdayGift')) === today) return real
@@ -1398,9 +1399,13 @@ export type Diary = {
   day: string
   xp: number; coins: number; bugs: number; helpers: number; turns: number; runnerXp: number; visits: number; focus: number
   green: number; red: number
+  /** Commits made that day (E17-S01); missing in older days. */
+  commits?: number
   stories: string[]
 }
-const freshDiary = (day: string): Diary => ({ day, xp: 0, coins: 0, bugs: 0, helpers: 0, turns: 0, runnerXp: 0, visits: 0, focus: 0, green: 0, red: 0, stories: [] })
+const freshDiary = (day: string): Diary => ({ day, xp: 0, coins: 0, bugs: 0, helpers: 0, turns: 0, runnerXp: 0, visits: 0, focus: 0, green: 0, red: 0, commits: 0, stories: [] })
+/** How many past days of the diary are kept for /pet week. */
+const DIARY_DAYS = 28
 
 async function readDiary($: EngineInterface): Promise<Diary> {
   const today = dayOf(await $.clock.now())
@@ -1409,6 +1414,13 @@ async function readDiary($: EngineInterface): Promise<Diary> {
 }
 
 async function bumpDiary($: EngineInterface, change: (d: Diary) => void) {
+  // a new day: yesterday's page goes into the past days first (E17-S01)
+  const stored = (await $.store.get('diary')) as Diary | undefined
+  const today = dayOf(await $.clock.now())
+  if (stored && typeof stored.day === 'string' && stored.day !== today) {
+    const past = await pastDays($)
+    await $.store.set('diaryDays', [...past.filter(x => x.day !== stored.day), stored].slice(-DIARY_DAYS))
+  }
   const d = await readDiary($)
   change(d)
   await $.store.set('diary', d)
@@ -1423,6 +1435,73 @@ export function diaryText(d: Diary, pet: { kind: PetKind; name: string }, wx: We
     d.stories.length ? `Worked on: ${d.stories.join(', ')}` : 'Worked on: no tracked story',
     wx ? `Weather: ${wx.place}, ${fmtTemp(wx.tempC, unit)}, ${wx.label.toLowerCase()}.` : '',
   ].filter(Boolean).join('\n')
+}
+
+/** The diary's past days, oldest first (E17-S01). */
+async function pastDays($: EngineInterface): Promise<Diary[]> {
+  const v = await $.store.get('diaryDays')
+  return Array.isArray(v) ? (v as Diary[]).filter(d => d && typeof d.day === 'string') : []
+}
+
+/** Every page of the diary: the past days and the current page, oldest first. */
+async function allDays($: EngineInterface): Promise<Diary[]> {
+  const current = (await $.store.get('diary')) as Diary | undefined
+  const past = await pastDays($)
+  return current && typeof current.day === 'string' ? [...past.filter(d => d.day !== current.day), current] : past
+}
+
+/** The day `n` days after `day` (YYYY-MM-DD). */
+export function dayPlus(day: string, n: number): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number]
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const weekdayOf = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay()
+
+/** The seven days to `last`, one diary each (an empty page where nothing happened). */
+export function weekOf(days: Diary[], last: string): Diary[] {
+  const byDay = new Map(days.map(d => [d.day, d]))
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = dayPlus(last, i - 6)
+    return { ...freshDiary(day), ...byDay.get(day) }
+  })
+}
+
+/** Seven days added up. */
+export function weekTotals(week: Diary[]) {
+  const sum = (k: 'xp' | 'coins' | 'bugs' | 'helpers' | 'turns' | 'focus' | 'green' | 'red' | 'commits') => week.reduce((n, d) => n + (d[k] ?? 0), 0)
+  return {
+    xp: sum('xp'), coins: sum('coins'), bugs: sum('bugs'), helpers: sum('helpers'), turns: sum('turns'), focus: sum('focus'),
+    green: sum('green'), red: sum('red'), commits: sum('commits'), active: week.filter(d => d.xp > 0 || d.turns > 0 || (d.commits ?? 0) > 0 || d.green + d.red > 0 || d.focus > 0).length,
+    stories: [...new Set(week.flatMap(d => d.stories))],
+  }
+}
+
+/** /pet week: the last seven days at a glance (E17-S01). */
+export function weekText(days: Diary[], today: string, pet: { name: string }): string {
+  const week = weekOf(days, today)
+  const t = weekTotals(week)
+  const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`
+  if (!t.active) return `${pet.name}'s week: nothing yet. Each day's diary is kept from now on; /pet week shows the last seven.`
+  const top = Math.max(1, ...week.map(d => d.xp))
+  const bars = week.map(d => (d.xp ? '▁▂▃▄▅▆▇█'[Math.min(7, Math.floor((d.xp / top) * 7.99))] : '·')).join('')
+  const best = week.reduce((a, b) => (b.xp > a.xp ? b : a))
+  return [
+    `${pet.name.toUpperCase()}'S WEEK · ${week[0]!.day} to ${today}`,
+    `XP by day  ${bars}  ${week.map(d => WEEKDAYS[weekdayOf(d.day)]![0]).join('')}  · best: ${WEEKDAYS[weekdayOf(best.day)]} ${best.day.slice(5)}, ${best.xp} XP`,
+    `${t.xp} XP · ◆${t.coins} · ${n(t.bugs, 'bug')} squashed · ${n(t.commits, 'commit')} · tests ${t.green} green, ${t.red} red · ${n(t.focus, 'focus round')} · ${n(t.helpers, 'helper')} home`,
+    `Active ${t.active} of 7 days · ${n(t.turns, 'turn')}`,
+    t.stories.length ? `Worked on: ${t.stories.join(', ')}` : 'Worked on: no tracked story',
+  ].join('\n')
+}
+
+/** Monday morning: a toast with last week, once (E17-S01). */
+async function mondayRecap($: EngineInterface, today: string) {
+  if (weekdayOf(today) !== 1 || (await $.store.get('weekToast')) === today) return
+  const t = weekTotals(weekOf(await allDays($), dayPlus(today, -1)))
+  await $.store.set('weekToast', today)
+  if (!t.active) return
+  $.ui.toast(`▶ LAST WEEK: ${t.xp} XP · ${t.commits} COMMITS · ${t.green} GREEN RUNS · ${t.focus} FOCUS ROUNDS · /pet week`, { timeoutMs: 10_000 })
 }
 
 /** The diary as an SVG card: the pet, then the day's lines. */
@@ -2432,6 +2511,7 @@ export const PET_HELP = [
   '  /pet visit <github login>  bring your pet to a friend\'s for a minute (+5 XP each, once a day)',
   '  /pet visits on|off         let friends visit you, or not',
   '  /pet diary [card]          today, in your pet\'s words; card copies it as a picture',
+  '  /pet week                  the last seven days: XP by day, commits, tests, focus',
   '',
   'LOOK',
   '  /retro                     show or hide the band',
@@ -2722,6 +2802,8 @@ async function petCommand($: EngineInterface, e: { args: string }): Promise<Comm
     }).catch(() => null)
     if (!r?.ok) return { text: 'Could not reach the board.' }
     return { text: isOff ? 'Visits off: nobody can bring their pet to yours.' : 'Visits on: friends can /pet visit you.' }
+  } else if (/^week$/i.test(args)) {
+    return { text: weekText(await allDays($), dayOf(await $.clock.now()), await readPet($)) }
   } else if (/^diary(\s+card)?$/i.test(args)) {
     const [d, pet, wx, themeName] = await Promise.all([readDiary($), readPet($), read($, weather), read($, theme)])
     const text = diaryText(d, pet, wx, CFG.temperatureUnit)
@@ -3167,7 +3249,10 @@ export const register: Register = (on, options) => {
       const out = ran.text ?? ''
       if (CONFLICT_RE.test(out)) petSim.isConflict = true
       else if (ok && SETTLE_RE.test(line.detail)) petSim.isConflict = false
-      if (ok && COMMIT_RE.test(line.detail) && !/nothing to commit|no changes added/.test(out)) await recordWork($, w => w.commits++)
+      if (ok && COMMIT_RE.test(line.detail) && !/nothing to commit|no changes added/.test(out)) {
+        await recordWork($, w => w.commits++)
+        await bumpDiary($, d => (d.commits = (d.commits ?? 0) + 1))
+      }
       if (ok && PUSH_RE.test(line.detail) && !/\[rejected\]|error:|fatal:/.test(out)) {
         petReact('^', 'warn', 4000, await $.clock.now(), false, { text: 'RIDES A ROCKET: PUSHED!', kind: 'rocket' })
       }
