@@ -26,7 +26,7 @@ import type { TempUnit, WeatherPlace, Weather } from './weather'
 export { wmo, toF, fmtTemp, fmtWind } from './weather'
 export type { WeatherKind, WeatherPlace, Weather } from './weather'
 import {
-  PET_ROWS, PET_MIN_ROWS, GRUMPY_AT, FURIOUS_AT, PETS, PET_KINDS, isPetKind, hex, stripRows, HD_MIN_ROWS, petCells, SVG_EVERY, SVG_FONT, css, esc, petSvg, titleCells, titleSvg, BUG,
+  PET_ROWS, PET_MIN_ROWS, GRUMPY_AT, FURIOUS_AT, PETS, PET_KINDS, isPetKind, hex, stripRows, HD_MIN_ROWS, petCells, SVG_FONT, css, esc, petSvg, titleCells, titleSvg, BUG,
 } from './scene'
 import type { HudSegment, PetFrame } from './scene'
 import { ACHIEVEMENTS, COUNTER, dayOf, freshProfile, nextStreak, noteTestRun, workOf } from './profile'
@@ -572,6 +572,13 @@ async function refreshStatus($: EngineInterface) {
 }
 
 let petSize: 'auto' | 'big' | 'small' = 'auto'
+/** How much the pet moves: normal, low (about one frame a second) or off (still, until something happens). */
+export type Motion = 'normal' | 'low' | 'off'
+let motion: Motion = 'normal'
+/** The pet's timer runs every TICK_MS; a still pet, low or off motion only take every n-th tick. */
+const TICK_MS = 140
+/** The least time between two SVG frames for a remote surface, by motion. */
+const SVG_GAP_MS: Record<Motion, number> = { normal: 560, low: 1100, off: 1100 }
 export const levelOf = (xp: number) => Math.floor(Math.sqrt(Math.max(0, xp) / 15)) + 1
 
 export function moodOf(limit: number | null): Mood {
@@ -595,6 +602,10 @@ const petSim = {
   /** Where a remote surface (desktop, VS Code, phone) shows the pet as SVG: the band, the pet pane. */
   remote: { band: false, pane: false },
   lastArt: '',
+  lastArtAt: 0,
+  /** Timer beats since the start, and whether the last frame had nothing moving in it. */
+  beat: 0,
+  isStill: false,
   sitUntil: 0,
   react: null as null | { glyph: string; tone: Tone; until: number; jump: boolean; text?: string; kind?: ReactKind },
   /** A merge conflict seen and not yet resolved (E6-S04). */
@@ -1699,6 +1710,10 @@ async function petTick($: EngineInterface) {
   const s = petSim
   const isRemote = s.remote.band || s.remote.pane
   if ((!s.isMounted && !isRemote) || s.columns < petW() + 2) return
+  // a still pet needs fewer frames: every 3rd beat (~0.4 s), low every 4th, off every 8th (~1.1 s)
+  s.beat++
+  const stride = motion === 'off' ? 8 : motion === 'low' ? 4 : s.isStill ? 3 : 1
+  if (s.beat % stride !== 0) return
   const now = await $.clock.now()
   if (s.lastActive === 0) s.lastActive = now
   await loadXp($)
@@ -1719,6 +1734,8 @@ async function petTick($: EngineInterface) {
   const nearestCoin = s.coins.slice().sort((a, b) => Math.abs(a - s.x) - Math.abs(b - s.x))[0]
 
   let pose: Pose = 'sit', lift = 0, speed = 0, line: string, flame = false
+  /** Walking only to pass the time (wandering, working): motion off sits instead. */
+  let isIdleWalk = false
   let bubble: PetFrame['bubble'] = null
   const walk = (every: number) => (Math.floor(s.tick / every) % 2 ? 'walkA' : 'walkB') as Pose
   const face = (target: number) => {
@@ -1794,6 +1811,7 @@ async function petTick($: EngineInterface) {
   } else if (s.isWorking) {
     speed = s.mood === 'happy' ? 0.9 : 0.5
     pose = walk(s.mood === 'happy' ? 1 : 2)
+    isIdleWalk = true
     line = s.mood === 'happy' ? `${name} IS HELPING…` : `${name} WORKS, GRUDGINGLY · ${s.limitLabel}`
   } else if (s.mood === 'furious') {
     // sits fuming, hissing now and then
@@ -1820,6 +1838,7 @@ async function petTick($: EngineInterface) {
     // wanders, heading for coins; a grumpy pet stomps along slower
     speed = s.mood === 'grumpy' ? 0.2 : 0.35
     pose = walk(s.mood === 'grumpy' ? 4 : 3)
+    isIdleWalk = nearestCoin === undefined
     if (nearestCoin !== undefined) face(nearestCoin)
     line = s.mood === 'grumpy' ? `${name} IS GRUMPY · ${s.limitLabel}` : nearestCoin !== undefined ? `${name} GOES FOR A COIN` : `${name} WANDERS`
     if (s.wx?.kind === 'snow' && s.mood === 'happy') {
@@ -1833,9 +1852,14 @@ async function petTick($: EngineInterface) {
     if (nearestCoin === undefined && Math.random() < 0.004) s.dir = s.dir === 1 ? -1 : 1
   }
 
+  if (motion === 'off' && isIdleWalk) {
+    speed = 0
+    pose = 'sit'
+    lift = 0
+  }
   s.x += speed * s.dir
   // strong wind pushes the pet along (E2-S04)
-  if (s.wx && s.wx.windKmh >= WINDY_KMH && pose !== 'sleep') s.x += 0.12
+  if (s.wx && s.wx.windKmh >= WINDY_KMH && pose !== 'sleep' && motion !== 'off') s.x += 0.12
   if (s.x <= 0) { s.x = 0; s.dir = 1 }
   if (s.x >= maxX) { s.x = maxX; s.dir = -1 }
 
@@ -1896,7 +1920,7 @@ async function petTick($: EngineInterface) {
   }
 
   const frame: PetFrame = {
-    sky: s.wx ? { kind: s.wx.kind, isDay: s.wx.isDay, windy: s.wx.windKmh >= WINDY_KMH, dir: 1 } : null, tick: s.tick,
+    sky: s.wx ? { kind: s.wx.kind, isDay: s.wx.isDay, windy: s.wx.windKmh >= WINDY_KMH, dir: 1 } : null, tick: motion === 'off' && !s.react && !op ? 0 : s.tick,
     kind: pet.kind, columns: s.columns, x: s.x, dir: s.dir, pose, mood: s.mood, lift, bubble,
     ballX: s.ballX, coins: s.coins, bugs: s.bugs, sparkle, bg: C.bg, ground: C.dim,
     kids: s.kids.slice(0, KID_MAX_SHOWN).map(k => ({
@@ -1904,23 +1928,31 @@ async function petTick($: EngineInterface) {
       tag: now < k.flashUntil ? '◆' : k.state === 'home' ? '♥' : String(k.n % 10),
       tagColor: hex(now < k.flashUntil ? C.warn : k.state === 'home' ? C.fail : C.info),
     })),
-    cursor: !s.isWorking && s.tick % 8 < 4 ? { color: hex(C.fg) } : null,
+    cursor: !s.isWorking && motion !== 'off' && s.tick % 8 < 4 ? { color: hex(C.fg) } : null,
     hud: hud(C, name, line),
     stage: stageOf(levelOf(s.xp)), items: worn(), flame, hd: s.hd, skin: s.skin, festival: s.festival?.id ?? null,
     box: op ? { x: op.x, isOpen: now >= op.openAt, shake: now < op.openAt ? s.tick : 0 } : null,
     guest: s.guest ? { kind: s.guest.kind, x: s.guest.x, dir: s.guest.dir, pose: s.guest.pose, stage: stageOf(s.guest.level), items: s.guest.wearing } : undefined,
   }
+  s.isStill = speed === 0 && lift === 0 && !op && !s.react && s.ballX === null && !s.guest && s.kids.length === 0 && s.bugs.length === 0
   if (s.isMounted) {
     const cells = petCells(frame)
+    if (cells === s.lastCells) return finishTick($, s, frame, line, isRemote, now)
     s.lastCells = cells
     const shown = await $.ui.blit({ requestId: s.requestId, key: 'pet', cells, columns: s.columns, rows: stripRows(s.hd) })
     if (shown.deny !== undefined) s.isMounted = false
   }
-  // remote surfaces redraw the whole tree, so they get a frame every 4 ticks (~0.5 s), and only when it changed
-  if (isRemote && s.tick % SVG_EVERY === 0) {
-    const art = petSvg(frame)
+  await finishTick($, s, frame, line, isRemote, now)
+}
+
+/** The end of a beat: a new SVG for remote surfaces, at most every SVG_GAP_MS and only when it changed, and the line. */
+async function finishTick($: EngineInterface, s: typeof petSim, frame: PetFrame, line: string, isRemote: boolean, now: number) {
+  // remote surfaces redraw the whole tree for a frame, so they get no blinking cursor and fewer frames
+  if (isRemote && now - s.lastArtAt >= SVG_GAP_MS[motion]) {
+    const art = petSvg({ ...frame, cursor: null })
     if (art !== s.lastArt) {
       s.lastArt = art
+      s.lastArtAt = now
       await update($, petArt, () => art)
     }
   }
@@ -2286,6 +2318,7 @@ export const PET_HELP = [
   '  /pet box [open]            blind boxes: one per level up, achievement and 4 focus rounds',
   '  /pet collection            every find, ✓ found or 🔒 not yet · /pet skin <name>|none',
   '  /pet size auto|big|small   the bigger, detailed pet or the small classic one',
+  '  /pet motion normal|low|off  less movement, lighter on a slow computer',
   '  /pet breaks [60|off]       a stretch-and-water reminder after an hour of work',
   '  /pet festivals [on|off]    Tết, Mid-Autumn, Christmas, New Year, Valentine\'s, Halloween',
   '  /pet festivals add 11-20 Teachers\' Day   a day of your own (remove <name> to drop it)',
@@ -2412,12 +2445,14 @@ export const register: Register = (on, options) => {
     petSim.skin = wallet.skin
     const size = await $.store.get('petSize')
     if (size === 'big' || size === 'small' || size === 'auto') petSize = size
+    const savedMotion = await $.store.get('motion')
+    if (savedMotion === 'normal' || savedMotion === 'low' || savedMotion === 'off') motion = savedMotion
     const best = await $.store.get('runnerBest')
     if (typeof best === 'number') game.best = best
     if ((await $.store.get('chimeOn')) === false) await update($, chimeOn, () => false)
     void refreshGit($)
     $.clock.every(10000, () => void refreshGit($))
-    $.clock.every(140, () => void petTick($))
+    $.clock.every(TICK_MS, () => void petTick($))
     await resumeFocus($)
     $.clock.every(1000, () => void refreshFocusText($))
     await refreshCalendar($)
@@ -2659,6 +2694,13 @@ export const register: Register = (on, options) => {
       await $.store.set('petSize', petSize)
       petSim.lastCells = ''
       return { text: want === 'small' ? 'The small classic pet, always.' : want === 'big' ? 'The bigger, detailed pet, always (it takes two more rows).' : 'Bigger when the band has room, small when it does not.' }
+    } else if (/^motion(\s+(normal|low|off))?$/i.test(args)) {
+      const want = args.replace(/^motion\s*/i, '').toLowerCase()
+      if (!want) return { text: `Motion: ${motion}. normal: the pet walks and plays · low: about a frame a second, lighter on a slow computer · off: it sits still until something happens. /pet motion normal|low|off` }
+      motion = want as Motion
+      await $.store.set('motion', motion)
+      petSim.isStill = false
+      return { text: motion === 'off' ? 'The pet sits still, and moves only when something happens.' : motion === 'low' ? 'Low motion: about a frame a second.' : 'Normal motion.' }
     } else if (/^shop$/i.test(args)) {
       return { text: shopText(await readWallet($)) }
     } else if (/^(buy|wear)\s+\S/i.test(args)) {
@@ -2988,8 +3030,9 @@ export const register: Register = (on, options) => {
       read($, tokens),
       read($, tests),
       $.session.model(),
-      // the strip blinks its own cursor, so the band need not redraw for it
-      withStrip ? Promise.resolve(true) : read($, blink),
+      // the strip blinks its own cursor, so the band need not redraw for it;
+      // remote surfaces skip it: a redraw there sends the whole tree
+      withStrip || !isTerminal ? Promise.resolve(true) : read($, blink),
       read($, log),
       read($, theme),
       read($, story),

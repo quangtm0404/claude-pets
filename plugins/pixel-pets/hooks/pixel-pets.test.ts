@@ -1558,3 +1558,56 @@ test('E13-S02/S03: a festival gives its keepsake once; /pet festivals adds and r
   expect((await $.command.run(run('pet', 'festivals remove nope'))).text).toContain('No day of your own called "nope"')
   expect(store.myFestivals).toEqual([{ date: '10-31', title: "Ana's birthday" }])
 })
+
+// ── 1.9.0: lighter on a slow computer ───────────────────────────────────────
+test('1.9.0: /pet motion low|off is kept; off sits the pet still, so the strip stops redrawing', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('session.surfaces', () => ({ value: ['terminal'] }) as never)
+  on('ui.log', () => ({ value: undefined }) as never)
+  let blits = 0
+  on('ui.blit', () => (blits++, { value: {} }) as never)
+  on('http.fetch', () => ({ value: { status: 500, ok: false, headers: {}, text: '' } }) as never)
+  const { store, clock } = timed(on)
+  await $.session.start(START)
+  expect((await $.command.run(run('pet', 'motion'))).text).toContain('Motion: normal')
+  const ui = await $.ui.mount(tallBand('terminal') as never)
+  await clock.advance(5000)
+  const moving = blits
+  expect(moving).toBeGreaterThan(10)
+
+  expect((await $.command.run(run('pet', 'motion off'))).text).toBe('The pet sits still, and moves only when something happens.')
+  expect(store.motion).toBe('off')
+  await clock.advance(2000)
+  blits = 0
+  await clock.advance(10_000)
+  expect(blits).toBeLessThanOrEqual(1)
+
+  expect((await $.command.run(run('pet', 'motion low'))).text).toBe('Low motion: about a frame a second.')
+  blits = 0
+  await clock.advance(5000)
+  expect(blits).toBeGreaterThan(0)
+  expect(blits).toBeLessThan(moving / 2)
+  await ui.unmount()
+  expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet motion normal|low|off')
+})
+
+test('1.9.0: a remote band gets no blinking cursor in the picture, and at most two frames a second', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('session.surfaces', () => ({ value: ['vscode'] }) as never)
+  on('ui.log', () => ({ value: undefined }) as never)
+  on('http.fetch', () => ({ value: { status: 500, ok: false, headers: {}, text: '' } }) as never)
+  const { clock } = timed(on)
+  await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true } as never)
+  const vs = await $.ui.mount(tallBand('vscode') as never)
+  const seen = new Set<string>()
+  for (let i = 0; i < 40; i++) {
+    await clock.advance(140)
+    seen.add(String((await vs.find({ type: 'Svg' }))?.props.source))
+  }
+  // 5.6 s: about ten frames at 560 ms apart, not forty
+  expect(seen.size).toBeGreaterThan(3)
+  expect(seen.size).toBeLessThanOrEqual(12)
+  expect([...seen].every(svg => svg.includes('<svg'))).toBe(true)
+  for (const svg of seen) expect(svg).not.toContain('<rect x="0" y="0" width="6" height="12"')
+  await vs.unmount()
+})

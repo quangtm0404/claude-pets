@@ -379,7 +379,6 @@ export function petCells(f: PetFrame): string {
 // The desktop app, VS Code and phones have no pixel grid (Raster), but they draw
 // SVG: the same frame, a square per pixel, with the HUD as text on the ground.
 export const SVG_PX = 6
-export const SVG_EVERY = 4
 const SVG_HUD_H = 18
 export const SVG_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 export const css = (c: number) => `#${c.toString(16).padStart(6, '0')}`

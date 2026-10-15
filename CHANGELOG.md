@@ -10,6 +10,7 @@ Built to last, and more to celebrate ([backlog](https://github.com/quangtm0404/c
 - **CI** (E11-S01): every push is validated, tested and type-checked, and the board service's tests run.
 - **The mod in modules** (E11-S02): themes, weather, the pet's scene and the profile have their own files. No change in behaviour.
 - **A demo in the README** (E12-S01), drawn by the mod itself.
+- **Lighter on a slow computer.** A pet sitting still is drawn less often, the desktop app and VS Code get at most two pictures a second with no blinking cursor in them, and the terminal strip is only redrawn when it changed. `/pet motion low` (about a frame a second) or `off` (still until something happens) go further.
 - **Fixed: two pets in VS Code.** VS Code now draws the band, so the pet pane no longer opens there by itself; `/pet pane` still opens it.
 - The board service shows keepsakes on badges once it is redeployed; until then a badge keeps the last look it had.
 
