@@ -863,7 +863,9 @@ So that I know the motion setting helped.
 | `/pet perf` counters and text | technical | ✅ Done |
 | Counts asserted with a mock clock | testing | ✅ Done |
 | Before: ~120 band redraws a minute in VS Code | testing | ✅ Done |
-| After, at each motion setting | testing | ⬜ To do |
+| After, motion normal (VS Code log, 2026-10-16): 34–48 a minute while the pet rests, 105–155 while it walks or Claude works; the walking frames are the bulk, by design up to two a second | testing | ✅ Done |
+| No redraw every 10 s outside a git repo (found measuring) | technical | ✅ Done |
+| After, motion low and off | testing | ⬜ To do |
 
 </details>
 

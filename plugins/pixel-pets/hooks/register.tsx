@@ -2224,7 +2224,8 @@ async function refreshGit($: EngineInterface) {
   try {
     const top = await $.process.run(['git', 'rev-parse', '--show-toplevel'])
     if (top.exitCode !== 0) {
-      await update($, git, () => null)
+      // not a repo: only a change redraws the band
+      if ((await read($, git)) !== null) await update($, git, () => null)
       return
     }
     const st = await $.process.run(['git', 'status', '--porcelain=v2', '--branch'])
