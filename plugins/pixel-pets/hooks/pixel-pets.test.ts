@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import {
-  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, dayPlus, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
+  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, dayPlus, fillWidth, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
   midAutumnOf, nextBirthday, noteTestRun, parseBreaks, perfText, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary, weekText,
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
@@ -1855,4 +1855,20 @@ test('E17-S01: a day\'s page is kept when the next day starts; Monday brings las
   expect(week.text).toContain('2 commits')
   expect(week.text).toContain('2026-10-13 to 2026-10-19')
   expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet week')
+})
+
+// ── 1.10.0: the strip fills a wide VS Code band ─────────────────────────────
+test('1.10.0: the remote strip asks for twice its size, so it fills the band; a wide band stays under the size limit', async ($, on) => {
+  expect(fillWidth('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="90" viewBox="0 0 600 90"><rect/></svg>'))
+    .toBe('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="180" viewBox="0 0 600 90"><rect/></svg>')
+  engine(on, '')
+  for (const columns of [100, 200, 260]) {
+    const vs = await $.ui.mount({ ...tallBand('vscode'), props: { ...tallBand('vscode').props, bodyColumns: columns } } as never)
+    const svg = String((await vs.find({ type: 'Svg' }))?.props.source)
+    const [w, , vw] = [/ width="(\d+)"/, / height="(\d+)"/, /viewBox="0 0 (\d+)/].map(re => Number(re.exec(svg)?.[1]))
+    expect(w).toBe(vw! * 2)
+    expect(vw).toBe(Math.min(240, columns - 2) * 6) // no 140-column cap
+    expect(svg.length).toBeLessThan(131072)
+    await vs.unmount()
+  }
 })

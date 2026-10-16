@@ -1851,6 +1851,14 @@ function remoteArt(art: string, pet: { kind: PetKind; name: string }, C: Palette
   return art || petSvg(stillFrame(pet, C, petSim.columns))
 }
 
+/**
+ * Asks for twice the picture's own size: a surface draws an Svg at its own width up to
+ * the slot, scaled to fit, so the strip fills the band's width however wide a column is.
+ */
+export function fillWidth(svg: string): string {
+  return svg.replace(/^<svg ([^>]*?)width="(\d+(?:\.\d+)?)" height="(\d+(?:\.\d+)?)"/, (_, pre: string, w: string, h: string) => `<svg ${pre}width="${Number(w) * 2}" height="${Number(h) * 2}"`)
+}
+
 function hud(C: Palette, name: string, line: string): HudSegment[] {
   const s = petSim
   const hearts = s.limit === null ? 5 : Math.max(0, Math.min(5, Math.ceil((100 - s.limit) / 20)))
@@ -3363,7 +3371,7 @@ export const register: Register = (on, options) => {
       if (wantsPet && !petSim.isMounted) petSim.hd = true
       if (wantsPet) {
         const { Svg } = $.ui.resolve(e)
-        strip = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(140, W - 2))} alt={`${PETS[pet.kind].emoji} ${petSim.line || pet.name.toUpperCase()}`} />
+        strip = <Svg key="pet" source={fillWidth(remoteArt(art, pet, C, Math.min(240, W - 2)))} alt={`${PETS[pet.kind].emoji} ${petSim.line || pet.name.toUpperCase()}`} />
       }
     }
     const isPixelTitle = fontName === 'pixel'
@@ -3491,7 +3499,7 @@ export const register: Register = (on, options) => {
       petSim.remote.pane = true
       if (!petSim.isMounted) petSim.hd = true
       const { Svg } = $.ui.resolve(e)
-      drawing = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(100, W - 2))} alt={`${PETS[pet.kind].emoji} ${line || pet.name.toUpperCase()}`} />
+      drawing = <Svg key="pet" source={fillWidth(remoteArt(art, pet, C, Math.min(240, W - 2)))} alt={`${PETS[pet.kind].emoji} ${line || pet.name.toUpperCase()}`} />
     }
     return (
       <Box flexDirection="column" backgroundColor={C.bg} width={W} paddingX={1}>
