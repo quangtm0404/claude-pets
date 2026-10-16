@@ -1857,20 +1857,3 @@ test('E17-S01: a day\'s page is kept when the next day starts; Monday brings las
   expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet week')
 })
 
-// ── 1.10.0: the strip fills a wide VS Code band ─────────────────────────────
-test('1.10.0: outside the terminal the band takes the whole panel; the strip keeps its own size, so frames never rescale', async ($, on) => {
-  engine(on, '')
-  for (const columns of [100, 200, 260]) {
-    const vs = await $.ui.mount({ ...tallBand('vscode'), props: { ...tallBand('vscode').props, bodyColumns: columns } } as never)
-    const svg = String((await vs.find({ type: 'Svg' }))?.props.source)
-    const [w, , vw] = [/ width="(\d+)"/, / height="(\d+)"/, /viewBox="0 0 (\d+)/].map(re => Number(re.exec(svg)?.[1]))
-    expect(w).toBe(vw) // drawn at its own size: a scaled picture jumps as each frame loads
-    expect(vw).toBe(Math.min(240, columns - 2) * 6) // no 140-column cap
-    expect(svg.length).toBeLessThan(131072)
-    expect((await vs.find({ type: 'Box' }))?.props.width).toBe('100%') // the panel's whole width, not a count of columns
-    await vs.unmount()
-  }
-  const term = await $.ui.mount(tallBand('terminal') as never)
-  expect((await term.find({ type: 'Box' }))?.props.width).toBe(100)
-  await term.unmount()
-})

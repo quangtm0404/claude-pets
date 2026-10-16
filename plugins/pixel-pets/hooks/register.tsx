@@ -3363,7 +3363,7 @@ export const register: Register = (on, options) => {
       if (wantsPet && !petSim.isMounted) petSim.hd = true
       if (wantsPet) {
         const { Svg } = $.ui.resolve(e)
-        strip = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(240, W - 2))} alt={`${PETS[pet.kind].emoji} ${petSim.line || pet.name.toUpperCase()}`} />
+        strip = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(140, W - 2))} alt={`${PETS[pet.kind].emoji} ${petSim.line || pet.name.toUpperCase()}`} />
       }
     }
     const isPixelTitle = fontName === 'pixel'
@@ -3455,7 +3455,7 @@ export const register: Register = (on, options) => {
     }
 
     return (
-      <Box flexDirection="column" width={e.surface === 'terminal' ? W : '100%'} backgroundColor={C.bg} paddingX={1}>
+      <Box flexDirection="column" width={W} backgroundColor={C.bg} paddingX={1}>
         {present.filter(r => kept.has(r)).map(r => rows[r])}
         <Box flexDirection="row">
           {fx && <Text color={C.hi} backgroundColor={C.bg} bold>{` ${fx} `}</Text>}
@@ -3491,10 +3491,10 @@ export const register: Register = (on, options) => {
       petSim.remote.pane = true
       if (!petSim.isMounted) petSim.hd = true
       const { Svg } = $.ui.resolve(e)
-      drawing = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(240, W - 2))} alt={`${PETS[pet.kind].emoji} ${line || pet.name.toUpperCase()}`} />
+      drawing = <Svg key="pet" source={remoteArt(art, pet, C, Math.min(100, W - 2))} alt={`${PETS[pet.kind].emoji} ${line || pet.name.toUpperCase()}`} />
     }
     return (
-      <Box flexDirection="column" backgroundColor={C.bg} width={e.surface === 'terminal' ? W : '100%'} paddingX={1}>
+      <Box flexDirection="column" backgroundColor={C.bg} width={W} paddingX={1}>
         <Text color={C.fg} backgroundColor={C.bg} bold wrap="truncate">{styleText(C.banner, fontName === 'pixel' ? 'plain' : fontName)}</Text>
         {drawing}
         <Text color={C.dim} backgroundColor={C.bg} wrap="truncate">{line || `${pet.name.toUpperCase()} THE ${pet.kind.toUpperCase()}`}</Text>
@@ -3516,7 +3516,7 @@ export const register: Register = (on, options) => {
     const C = paletteOf(themeName)
     const W = Math.max(24, e.props.bodyColumns)
     return (
-      <Box flexDirection="column" backgroundColor={C.bg} width={e.surface === 'terminal' ? W : '100%'} paddingX={1}>
+      <Box flexDirection="column" backgroundColor={C.bg} width={W} paddingX={1}>
         <Text color={C.hi} backgroundColor={C.bg} bold>{'*** PET SETTINGS ***'}</Text>
         {rows.map(r => (
           <Box key={r.key} flexDirection="row" gap={1}>
@@ -3561,7 +3561,7 @@ export const register: Register = (on, options) => {
     const badW = res && total ? Math.round(((res.failed + res.flaky) / total) * barW) : 0
 
     return (
-      <Box flexDirection="column" backgroundColor={C.bg} width={e.surface === 'terminal' ? W : '100%'} paddingX={1}>
+      <Box flexDirection="column" backgroundColor={C.bg} width={W} paddingX={1}>
         <Text color={C.hi} backgroundColor={C.bg} bold>{'*** QA MONITOR 64 ***'}</Text>
         <Text color={C.fg} backgroundColor={C.bg}> </Text>
 
