@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import {
-  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, dayPlus, fillWidth, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
+  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, dayPlus, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
   midAutumnOf, nextBirthday, noteTestRun, parseBreaks, perfText, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary, weekText,
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
@@ -1601,13 +1601,13 @@ test('1.9.0: a remote band gets no blinking cursor in the picture, and at most t
   await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true } as never)
   const vs = await $.ui.mount(tallBand('vscode') as never)
   const seen = new Set<string>()
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 100; i++) {
     await clock.advance(140)
     seen.add(String((await vs.find({ type: 'Svg' }))?.props.source))
   }
-  // 5.6 s: about ten frames at 560 ms apart, not forty
+  // 14 s: at most one frame every 560 ms (26), not a hundred; a pet that sat a while sends fewer
   expect(seen.size).toBeGreaterThan(3)
-  expect(seen.size).toBeLessThanOrEqual(12)
+  expect(seen.size).toBeLessThanOrEqual(26)
   expect([...seen].every(svg => svg.includes('<svg'))).toBe(true)
   for (const svg of seen) expect(svg).not.toContain('<rect x="0" y="0" width="6" height="12"')
   await vs.unmount()
@@ -1858,15 +1858,13 @@ test('E17-S01: a day\'s page is kept when the next day starts; Monday brings las
 })
 
 // ── 1.10.0: the strip fills a wide VS Code band ─────────────────────────────
-test('1.10.0: the remote strip asks for twice its size, so it fills the band; a wide band stays under the size limit', async ($, on) => {
-  expect(fillWidth('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="90" viewBox="0 0 600 90"><rect/></svg>'))
-    .toBe('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="180" viewBox="0 0 600 90"><rect/></svg>')
+test('1.10.0: outside the terminal the band takes the whole panel; the strip keeps its own size, so frames never rescale', async ($, on) => {
   engine(on, '')
   for (const columns of [100, 200, 260]) {
     const vs = await $.ui.mount({ ...tallBand('vscode'), props: { ...tallBand('vscode').props, bodyColumns: columns } } as never)
     const svg = String((await vs.find({ type: 'Svg' }))?.props.source)
     const [w, , vw] = [/ width="(\d+)"/, / height="(\d+)"/, /viewBox="0 0 (\d+)/].map(re => Number(re.exec(svg)?.[1]))
-    expect(w).toBe(vw! * 2)
+    expect(w).toBe(vw) // drawn at its own size: a scaled picture jumps as each frame loads
     expect(vw).toBe(Math.min(240, columns - 2) * 6) // no 140-column cap
     expect(svg.length).toBeLessThan(131072)
     expect((await vs.find({ type: 'Box' }))?.props.width).toBe('100%') // the panel's whole width, not a count of columns

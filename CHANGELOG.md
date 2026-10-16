@@ -8,7 +8,7 @@ Found, and easy to tune ([backlog](https://github.com/quangtm0404/claude-pets/bl
 - **`/pet perf`** (E15-S02): how much the pet is drawing, per minute, so you can see what `/pet motion` saves on your computer.
 - **`/pet festivals preview halloween`** (E14-S02): see any festival for 30 seconds, on any day. No keepsake: that still comes on the day.
 - **Lighter on a slow computer.** A pet sitting still is drawn less often, the desktop app and VS Code get at most two pictures a second with no blinking cursor in them, and the terminal strip is only redrawn when it changed. `/pet motion low` (about a frame a second) or `off` (still until something happens) go further.
-- **Fixed: the pet strip filled only about 80% of a wide VS Code band.** The band and the pet pane now take the panel's whole width outside the terminal, and the strip stretches to fill it (the 140-column cap is gone).
+- **The band takes the whole panel in VS Code and the desktop app** (it was sized by a count of text columns, about 80% of a wide panel). The pet strip keeps its own size, so its frames never rescale and jump; the 140-column cap on it is gone.
 - **Fixed: two pets in VS Code.** VS Code now draws the band, so the pet pane no longer opens there by itself; `/pet pane` still opens it.
 - **`/pet backup` and `/pet restore <code>`** (E16-S01): move your pet to another computer with one line of text; `/pet restore undo` takes it back. The leaderboard key and weather place stay behind.
 - **`/pet week`** (E17-S01): the last seven days, XP by day as bars, with commits, test runs and focus rounds; on Monday a toast brings last week. The diary now keeps 28 days.
