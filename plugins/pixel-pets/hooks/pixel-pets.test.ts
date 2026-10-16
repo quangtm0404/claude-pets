@@ -1869,6 +1869,10 @@ test('1.10.0: the remote strip asks for twice its size, so it fills the band; a 
     expect(w).toBe(vw! * 2)
     expect(vw).toBe(Math.min(240, columns - 2) * 6) // no 140-column cap
     expect(svg.length).toBeLessThan(131072)
+    expect((await vs.find({ type: 'Box' }))?.props.width).toBe('100%') // the panel's whole width, not a count of columns
     await vs.unmount()
   }
+  const term = await $.ui.mount(tallBand('terminal') as never)
+  expect((await term.find({ type: 'Box' }))?.props.width).toBe(100)
+  await term.unmount()
 })
