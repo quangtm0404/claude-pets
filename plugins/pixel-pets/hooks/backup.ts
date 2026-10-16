@@ -5,7 +5,7 @@
 
 /** The saved values a backup holds, as they are kept in the store. */
 export const BACKUP_KEYS = [
-  'pet', 'petXp', 'wallet', 'profile', 'adoptedOn', 'myFestivals', 'runnerBest', 'diary', 'diaryDays',
+  'pet', 'petXp', 'wallet', 'profile', 'adoptedOn', 'myFestivals', 'runnerBest', 'diary', 'diaryDays', 'goals',
   'petShown', 'petSize', 'motion', 'theme', 'font', 'chimeOn', 'festivals', 'breaks', 'chatter', 'runnerAuto',
 ] as const
 export type BackupKey = (typeof BACKUP_KEYS)[number]

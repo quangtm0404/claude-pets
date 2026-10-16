@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import {
-  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, dayPlus, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
+  ACHIEVEMENTS, BIRTHDAY_XP, BOX_ODDS, BOX_PITY, BOX_REVEAL_MS, CHATTER_EVERY_MS, birthdayAge, breakAfter, collectionText, dayPlus, goalBit, goalsMet, parseGoal, decodeBackup, encodeBackup, festivalNamed, festivalOn, focusLabel, focusXp,
   midAutumnOf, nextBirthday, noteTestRun, parseBreaks, perfText, parseMyFestival, upcomingFestivals, parseFocus, petPixels, rollBox, stageOf, tetOf, toolKind, turnSummary, weekText,
 } from './register'
 import { HD, HD_H, hdSprite, traceLoops, vectorPet } from './art'
@@ -1120,10 +1120,11 @@ function timed(on: On, seed: Record<string, unknown> = {}, now = NINE) {
   on('fs.exists', () => ({ value: false }))
   on('store.get', (_$, e) => ({ value: store[(e as { key: string }).key] }) as never)
   on('store.set', (_$, e) => ((store[(e as { key: string }).key] = (e as { value: unknown }).value), { value: undefined }) as never)
-  on('ui.status', () => ({ value: undefined }))
+  const status: string[] = []
+  on('ui.status', (_$, e) => (status.push(String((e as { text?: string }).text)), { value: undefined }) as never)
   on('ui.toast', (_$, e) => (toasts.push(e.text), { value: undefined }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }) as never)
-  return { store, toasts, clock }
+  return { store, toasts, clock, status }
 }
 const bandText = async ($: { ui: { mount: (x: never) => Promise<{ find: (q: { text: RegExp }) => Promise<unknown>; unmount: () => Promise<void> }> } }, re: RegExp) => {
   const ui = await $.ui.mount(tallBand('terminal') as never)
@@ -1857,3 +1858,46 @@ test('E17-S01: a day\'s page is kept when the next day starts; Monday brings las
   expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet week')
 })
 
+
+// ── E17-S02: daily goals ────────────────────────────────────────────────────
+test('E17-S02: goals parse either way round, and are met when every one is', () => {
+  expect(parseGoal('commits 3')).toEqual({ kind: 'commits', n: 3 })
+  expect(parseGoal('3 commits')).toEqual({ kind: 'commits', n: 3 })
+  expect(parseGoal('tests 5')).toEqual({ kind: 'green', n: 5 })
+  expect(parseGoal('focus off')).toEqual({ kind: 'focus', n: 0 })
+  expect(parseGoal('xp 9999')).toBeNull()
+  expect(parseGoal('naps 3')).toBeNull()
+  const d = page('2026-10-16', { commits: 3, green: 2 })
+  expect(goalsMet({}, d as never)).toBe(false) // no goal, nothing to meet
+  expect(goalsMet({ commits: 3 }, d as never)).toBe(true)
+  expect(goalsMet({ commits: 3, green: 5 }, d as never)).toBe(false)
+  expect(goalBit({ commits: 3, green: 5 }, d as never)).toBe('GOAL 1/2')
+  expect(goalBit({ commits: 3 }, d as never)).toBe('GOAL ✓')
+  expect(goalBit({}, d as never)).toBe('')
+})
+
+test('E17-S02: /pet goal sets targets; meeting them all gives XP and a box once, and the status line follows', async ($, on) => {
+  const { store, toasts, status } = timed(on, {}, Date.parse('2026-10-16T10:00:00'))
+  on('tool.call', () => ({ result: {}, text: '[main 1a2b3c4] fix\n 1 file changed' }) as never)
+  expect((await $.command.run(run('pet', 'goal'))).text).toContain('No daily goals yet.')
+  await $.command.run(run('pet', 'goal commits 2'))
+  await $.command.run(run('pet', 'goal focus 1'))
+  expect(store.goals).toEqual({ commits: 2, focus: 1 })
+  expect((await $.command.run(run('pet', 'goal'))).text).toContain('· 0/2 commits')
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "a"' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "b"' } as never)
+  expect(status[status.length - 1]).toContain('GOAL 1/2')
+  expect(toasts.some(t => t.includes("TODAY'S GOAL MET"))).toBe(false)
+
+  await $.command.run(run('pet', 'goal focus off')) // now only the commits are asked: met already
+  expect(toasts.filter(t => t.includes("TODAY'S GOAL MET"))).toHaveLength(1)
+  expect(toasts.some(t => t.includes("BLIND BOX FOR MEETING TODAY'S GOAL"))).toBe(true)
+  expect(status[status.length - 1]).toContain('GOAL ✓')
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "c"' } as never)
+  expect(toasts.filter(t => t.includes("TODAY'S GOAL MET"))).toHaveLength(1) // once a day
+  expect((await $.command.run(run('pet', 'goal'))).text).toContain("Today's goals: all met!")
+  expect((await $.command.run(run('pet', 'week'))).text).toContain('goals met 1 of 7 days')
+  expect((await $.command.run(run('pet', 'goal naps 3'))).text).toContain('Not a goal I know.')
+  expect((await $.command.run(run('pet', 'goal off'))).text).toBe('Daily goals cleared.')
+  expect((await $.command.run(run('pet', 'help'))).text).toContain('/pet goal commits 3')
+})

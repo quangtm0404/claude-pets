@@ -2,7 +2,7 @@
 
 ## 1.10.0 — 2026-10-15
 
-Found, and easy to tune ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E11-S03, E14, E15-S01, E15-S02, E16-S01, E17-S01).
+Found, and easy to tune ([backlog](https://github.com/quangtm0404/claude-pets/blob/main/docs/backlog/BACKLOG.md): E11-S03, E14, E15-S01, E15-S02, E16-S01, E17).
 
 - **`/pet settings`** (E14-S01): every setting on one screen, a button per choice: pet, size, motion, theme, font, sound, break reminders, festivals, chatter and the runner.
 - **`/pet perf`** (E15-S02): how much the pet is drawing, per minute, so you can see what `/pet motion` saves on your computer.
@@ -11,6 +11,8 @@ Found, and easy to tune ([backlog](https://github.com/quangtm0404/claude-pets/bl
 - **Fixed: two pets in VS Code.** VS Code now draws the band, so the pet pane no longer opens there by itself; `/pet pane` still opens it.
 - **`/pet backup` and `/pet restore <code>`** (E16-S01): move your pet to another computer with one line of text; `/pet restore undo` takes it back. The leaderboard key and weather place stay behind.
 - **`/pet week`** (E17-S01): the last seven days, XP by day as bars, with commits, test runs and focus rounds; on Monday a toast brings last week. The diary now keeps 28 days.
+- **Daily goals** (E17-S02): `/pet goal commits 3` (or green, focus, xp). The status line shows `GOAL 1/2`; meet them all for +20 XP and a blind box, once a day.
+- No band redraw every 10 seconds in a folder that isn't a git repository.
 - Commands typed while `/pet settings` is open now update it too.
 - Shorter command descriptions with argument hints, so the typeahead shows what `/pet`, `/retro`, `/story`, `/ticket` and `/guard` take.
 - `docs/LISTING.md`: the plugin directory submission, ready to paste (E15-S01).

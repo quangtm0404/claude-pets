@@ -574,7 +574,9 @@ async function refreshStatus($: EngineInterface) {
   const lim = [u.fiveHour && `5H ${Math.round(u.fiveHour.percent)}%`, u.week && `WK ${Math.round(u.week.percent)}%`]
     .filter(Boolean).join(' ')
   const limBit = lim ? ` │ ${lim}` : ''
-  $.ui.status(`▌PETS▐ READY. │ ${fmtModel(model)} │ ${where}${limBit} │ ${fmtTokens(tok)} TOK${run}${testBit}`)
+  const goal = goalBit(await readGoals($), await readDiary($))
+  const goalPart = goal ? ` │ ${goal}` : ''
+  $.ui.status(`▌PETS▐ READY. │ ${fmtModel(model)} │ ${where}${limBit} │ ${fmtTokens(tok)} TOK${run}${testBit}${goalPart}`)
 }
 
 let petSize: 'auto' | 'big' | 'small' = 'auto'
@@ -1401,6 +1403,8 @@ export type Diary = {
   green: number; red: number
   /** Commits made that day (E17-S01); missing in older days. */
   commits?: number
+  /** Every daily goal met that day (E17-S02). */
+  goalMet?: boolean
   stories: string[]
 }
 const freshDiary = (day: string): Diary => ({ day, xp: 0, coins: 0, bugs: 0, helpers: 0, turns: 0, runnerXp: 0, visits: 0, focus: 0, green: 0, red: 0, commits: 0, stories: [] })
@@ -1423,7 +1427,107 @@ async function bumpDiary($: EngineInterface, change: (d: Diary) => void) {
   }
   const d = await readDiary($)
   change(d)
+  const goals = await readGoals($)
+  const isMet = !d.goalMet && goalsMet(goals, d)
+  if (isMet) d.goalMet = true
   await $.store.set('diary', d)
+  if (isMet) await celebrateGoal($)
+  if (Object.keys(goals).length) await refreshStatus($)
+}
+
+// ── Daily goals (E17-S02) ────────────────────────────────────────────────────
+export type GoalKind = 'commits' | 'green' | 'focus' | 'xp'
+export type Goals = Partial<Record<GoalKind, number>>
+const GOAL_KINDS: GoalKind[] = ['commits', 'green', 'focus', 'xp']
+const GOAL_WORDS: Record<GoalKind, [string, string]> = {
+  commits: ['commit', 'commits'], green: ['green test run', 'green test runs'], focus: ['focus round', 'focus rounds'], xp: ['XP', 'XP'],
+}
+export const GOAL_XP = 20
+
+/** Each goal set, with how far today has got. */
+export function goalProgress(goals: Goals, d: Diary): { kind: GoalKind; want: number; have: number }[] {
+  const have: Record<GoalKind, number> = { commits: d.commits ?? 0, green: d.green, focus: d.focus, xp: d.xp }
+  return GOAL_KINDS.filter(k => (goals[k] ?? 0) > 0).map(k => ({ kind: k, want: goals[k]!, have: have[k] }))
+}
+
+/** True when at least one goal is set and every one is met. */
+export function goalsMet(goals: Goals, d: Diary): boolean {
+  const all = goalProgress(goals, d)
+  return all.length > 0 && all.every(g => g.have >= g.want)
+}
+
+/** `commits 3`, `3 commits`, `tests 5`, `focus 2`, `xp 100`; `<kind> off` drops one. */
+export function parseGoal(text: string): { kind: GoalKind; n: number } | null {
+  const alias: Record<string, GoalKind> = {
+    commit: 'commits', commits: 'commits', green: 'green', tests: 'green', test: 'green', runs: 'green',
+    focus: 'focus', rounds: 'focus', pomodoro: 'focus', xp: 'xp',
+  }
+  const m = /^(?:([a-z]+)\s+(\d{1,4}|off)|(\d{1,4})\s+([a-z]+))$/i.exec(text.trim())
+  if (!m) return null
+  const kind = alias[(m[1] ?? m[4] ?? '').toLowerCase()]
+  const raw = m[2] ?? m[3] ?? ''
+  if (!kind) return null
+  const n = raw.toLowerCase() === 'off' ? 0 : Number(raw)
+  return n <= (kind === 'xp' ? 5000 : 100) ? { kind, n } : null
+}
+
+async function readGoals($: EngineInterface): Promise<Goals> {
+  const v = await $.store.get('goals')
+  const out: Goals = {}
+  if (v && typeof v === 'object') for (const k of GOAL_KINDS) {
+    const n = (v as Record<string, unknown>)[k]
+    if (typeof n === 'number' && n > 0) out[k] = n
+  }
+  return out
+}
+
+/** The goals as the status line shows them: GOAL 1/2, or GOAL ✓. */
+export function goalBit(goals: Goals, d: Diary): string {
+  const all = goalProgress(goals, d)
+  if (!all.length) return ''
+  const done = all.filter(g => g.have >= g.want).length
+  return done === all.length ? 'GOAL ✓' : `GOAL ${done}/${all.length}`
+}
+
+async function celebrateGoal($: EngineInterface) {
+  const pet = await readPet($)
+  petReact('★', 'warn', 4000, await $.clock.now(), true, { text: "MET TODAY'S GOAL!" })
+  $.ui.toast(`▶ TODAY'S GOAL MET! ${pet.name.toUpperCase()} IS PROUD OF YOU · +${GOAL_XP} XP`, { timeoutMs: 8000 })
+  void petVoice($)
+  await gainXp($, GOAL_XP, 'other')
+  await earnBox($, 1, "MEETING TODAY'S GOAL")
+}
+
+/** /pet goal [<kind> <n>|<kind> off|off] (E17-S02). */
+async function goalCommand($: EngineInterface, arg: string): Promise<string> {
+  const usage = 'Set one with /pet goal commits 3 · /pet goal green 5 · /pet goal focus 2 · /pet goal xp 100; /pet goal off clears them.'
+  const goals = await readGoals($)
+  if (/^(off|clear|none)$/i.test(arg)) {
+    await $.store.set('goals', {})
+    await refreshStatus($)
+    return 'Daily goals cleared.'
+  }
+  if (arg) {
+    const g = parseGoal(arg)
+    if (!g) return `Not a goal I know. ${usage}`
+    const next: Goals = { ...goals, [g.kind]: g.n }
+    if (!g.n) delete next[g.kind]
+    await $.store.set('goals', next)
+    await bumpDiary($, () => {}) // met already? it counts
+    await refreshStatus($)
+    if (!g.n) return `Dropped the ${GOAL_WORDS[g.kind][1]} goal.`
+  }
+  const now = await readGoals($)
+  const d = await readDiary($)
+  const all = goalProgress(now, d)
+  if (!all.length) return `No daily goals yet. ${usage}`
+  const line = (x: { kind: GoalKind; want: number; have: number }) =>
+    `  ${x.have >= x.want ? '✓' : '·'} ${Math.min(x.have, x.want)}/${x.want} ${GOAL_WORDS[x.kind][x.want === 1 ? 0 : 1]}`
+  return [
+    d.goalMet ? `Today's goals: all met! (+${GOAL_XP} XP and a blind box)` : "Today's goals:",
+    ...all.map(line),
+    `Meet them all for +${GOAL_XP} XP and a blind box, once a day. ${usage}`,
+  ].join('\n')
 }
 
 export function diaryText(d: Diary, pet: { kind: PetKind; name: string }, wx: Weather | null, unit: TempUnit): string {
@@ -1490,7 +1594,7 @@ export function weekText(days: Diary[], today: string, pet: { name: string }): s
     `${pet.name.toUpperCase()}'S WEEK · ${week[0]!.day} to ${today}`,
     `XP by day  ${bars}  ${week.map(d => WEEKDAYS[weekdayOf(d.day)]![0]).join('')}  · best: ${WEEKDAYS[weekdayOf(best.day)]} ${best.day.slice(5)}, ${best.xp} XP`,
     `${t.xp} XP · ◆${t.coins} · ${n(t.bugs, 'bug')} squashed · ${n(t.commits, 'commit')} · tests ${t.green} green, ${t.red} red · ${n(t.focus, 'focus round')} · ${n(t.helpers, 'helper')} home`,
-    `Active ${t.active} of 7 days · ${n(t.turns, 'turn')}`,
+    `Active ${t.active} of 7 days · ${n(t.turns, 'turn')}${week.some(d => d.goalMet) ? ` · goals met ${week.filter(d => d.goalMet).length} of 7 days` : ''}`,
     t.stories.length ? `Worked on: ${t.stories.join(', ')}` : 'Worked on: no tracked story',
   ].join('\n')
 }
@@ -2513,6 +2617,7 @@ export const PET_HELP = [
   '  /pet visits on|off         let friends visit you, or not',
   '  /pet diary [card]          today, in your pet\'s words; card copies it as a picture',
   '  /pet week                  the last seven days: XP by day, commits, tests, focus',
+  '  /pet goal commits 3        a daily goal (commits, green, focus, xp): +20 XP and a box when met',
   '',
   'LOOK',
   '  /retro                     show or hide the band',
@@ -2803,6 +2908,8 @@ async function petCommand($: EngineInterface, e: { args: string }): Promise<Comm
     }).catch(() => null)
     if (!r?.ok) return { text: 'Could not reach the board.' }
     return { text: isOff ? 'Visits off: nobody can bring their pet to yours.' : 'Visits on: friends can /pet visit you.' }
+  } else if (/^goals?(\s+.*)?$/i.test(args)) {
+    return { text: await goalCommand($, args.replace(/^goals?\s*/i, '')) }
   } else if (/^week$/i.test(args)) {
     return { text: weekText(await allDays($), dayOf(await $.clock.now()), await readPet($)) }
   } else if (/^diary(\s+card)?$/i.test(args)) {

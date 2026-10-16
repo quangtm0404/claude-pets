@@ -141,6 +141,7 @@ The board runs at `https://claude-pets-board.claude-pets-leaderboard.workers.dev
 - **`/pet visit <github login>`**: your pet plays with a friend's in your band for a minute. The first visit a day between two players gives you both +5 XP; they hear about it after their next turn. `/pet visits off` stops others visiting you.
 - **`/pet diary`**: today in your pet's words (coins, bugs, tests, turns, helpers, the runner, visits, the stories you worked on, the weather). `/pet diary card` copies it as an SVG picture. The diary stays on your machine.
 - **`/pet week`**: the last seven days, XP by day as bars, with commits, test runs, focus rounds and the stories you worked on. On Monday a toast brings last week. The diary keeps 28 days, on this computer only (and in `/pet backup`).
+- **Daily goals**: **`/pet goal commits 3`**, `green 5`, `focus 2` or `xp 100`. The status line shows `GOAL 1/2`; meet them all and your pet jumps for joy, with +20 XP and a blind box, once a day. `/pet goal off` clears them.
 
 ### Guardrails
 - **Generated files**: Claude's edits to files marked `@generated`, `DO NOT EDIT` or "generated from … regenerate" are refused, pointing back at their source.

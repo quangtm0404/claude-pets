@@ -909,7 +909,7 @@ So that the pet I've raised comes with me (the Mac install started from nothing)
 
 </details>
 
-### E17 · Looking back - ✅ Done
+### E17 · Looking back, and a finish line - ✅ Done
 
 **Outcome.** The work of a week is there to see, not just today's.
 
@@ -927,6 +927,23 @@ So that I can see how the week went, and have something for a Monday standup.
 |---|---|---|
 | Past days, commits per day, /pet week, the Monday toast | technical | ✅ Done |
 | The week's sums and bars, the day rolling over, one toast asserted | testing | ✅ Done |
+
+</details>
+
+<details><summary><b>E17-S02</b> - as a <b>developer</b>, I want <b>a daily goal the pet cheers me on to</b> · ✅ Done · 3 pts</summary>
+
+So that a good day has a finish line.
+
+**Acceptance criteria**
+- `/pet goal commits 3`, `green 5`, `focus 2` or `xp 100` (either way round); `/pet goal <kind> off` drops one, `/pet goal off` clears them; `/pet goal` shows each with today's progress
+- The status line shows `GOAL 1/2`, then `GOAL ✓`
+- Meeting every goal: a toast, the pet jumps for joy, +20 XP and a blind box, once a day
+- `/pet week` counts the days the goals were met; backups carry the goals
+
+| Task | Kind | Status |
+|---|---|---|
+| Goals, progress from the diary, the reward, the status line | technical | ✅ Done |
+| Parsing, partly and wholly met, once a day, the status line asserted | testing | ✅ Done |
 
 </details>
 
