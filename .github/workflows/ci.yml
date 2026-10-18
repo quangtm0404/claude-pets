@@ -24,10 +24,17 @@ jobs:
       - name: Validate
         run: claude plugin validate plugins/pixel-pets
       - name: Test
-        # also writes .claude-plugin/types and tsconfig.json, which the type-check extends
         run: claude plugin test plugins/pixel-pets
       - name: Type-check
-        run: npx -y -p typescript tsc -p plugins/pixel-pets
+        # the API types are laid by the engine and never published; type-check only where they are
+        working-directory: plugins/pixel-pets
+        run: |
+          if [ ! -f .claude-plugin/types/tsconfig.json ]; then
+            echo "::notice::No engine types here; type-check skipped (run tsc locally)"
+            exit 0
+          fi
+          [ -f tsconfig.json ] || echo '{ "extends": "./.claude-plugin/types/tsconfig.json" }' > tsconfig.json
+          npx -y -p typescript tsc -p . --noUnusedLocals
 
   server:
     name: Board service (tests)
